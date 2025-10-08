@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:weathercompanion/services/weather_services.dart';
-import 'package:weathercompanion/widgets/weather_card';
+import 'package:weathercompanion/widgets/weather_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -82,6 +82,20 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 🌤 App Title / Version Label
+                Center(
+                  child: Text(
+                    'WeatherCompanion • Beta v1.0',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white.withOpacity(0.9),
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 25),
+
                 // 🔍 Search Bar
                 Row(
                   children: [
@@ -167,6 +181,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         value: "${windSpeed.toStringAsFixed(1)} km/h",
                       ),
                     ],
+                  ),
+                ),
+
+                //Developer Label
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 10),
+                    child: Text(
+                      'Developed by Cervantes,Balmedina,Robiego',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ),
                 ),
               ],
