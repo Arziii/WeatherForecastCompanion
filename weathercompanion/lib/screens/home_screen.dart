@@ -19,7 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int humidity = 0;
   double windSpeed = 0;
   String weatherIcon = "🌤";
-
   bool isLoading = true;
 
   @override
@@ -76,120 +75,119 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset:
+            true, // ✅ prevents overflow when keyboard appears
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 🌤 App Title / Version Label
-                Center(
-                  child: Text(
-                    'WeatherCompanion • Beta v1.0',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white.withOpacity(0.9),
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 25),
-
-                // 🔍 Search Bar
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _cityController,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: "Enter city name",
-                          hintStyle: const TextStyle(color: Colors.white70),
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.2),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search,
-                            color: Colors.white,
-                          ),
-                        ),
-                        onSubmitted: (value) {
-                          if (value.isNotEmpty) {
-                            setState(() {
-                              cityName = value;
-                            });
-                            _fetchWeather();
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      onPressed: _fetchWeather,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 25),
-
-                // 🧭 City name and description
-                Text(
-                  cityName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  weatherDescription,
-                  style: const TextStyle(color: Colors.white70, fontSize: 18),
-                ),
-                const SizedBox(height: 30),
-
-                // 🌤 Weather Card or Loader
-                if (isLoading)
+            child: SingleChildScrollView(
+              // ✅ allows scrolling when keyboard opens
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 🌤 App title
                   const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
-                else
-                  WeatherCard(
-                    temperature: temperature,
-                    icon: weatherIcon,
-                    description: weatherDescription,
-                  ),
-
-                const SizedBox(height: 25),
-
-                // 🌡 Additional info
-                Expanded(
-                  child: ListView(
-                    children: [
-                      _buildWeatherInfoTile(
-                        icon: Icons.water_drop,
-                        label: "Humidity",
-                        value: "$humidity%",
+                    child: Text(
+                      "WeatherCompanion • Beta v1.0",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
                       ),
-                      _buildWeatherInfoTile(
-                        icon: Icons.air,
-                        label: "Wind Speed",
-                        value: "${windSpeed.toStringAsFixed(1)} km/h",
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 🔍 Search Bar
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _cityController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: "Enter city name",
+                            hintStyle: const TextStyle(color: Colors.white70),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.2),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.white,
+                            ),
+                          ),
+                          onSubmitted: (value) {
+                            if (value.isNotEmpty) {
+                              setState(() {
+                                cityName = value;
+                              });
+                              _fetchWeather();
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                        onPressed: _fetchWeather,
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 25),
 
-                //Developer Label
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 10),
+                  // 🧭 City name and description
+                  Text(
+                    cityName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    weatherDescription,
+                    style: const TextStyle(color: Colors.white70, fontSize: 18),
+                  ),
+                  const SizedBox(height: 30),
+
+                  // 🌤 Weather Card or Loader
+                  if (isLoading)
+                    const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                  else
+                    WeatherCard(
+                      temperature: temperature,
+                      icon: weatherIcon,
+                      description: weatherDescription,
+                    ),
+
+                  const SizedBox(height: 25),
+
+                  // 🌡 Additional info
+                  _buildWeatherInfoTile(
+                    icon: Icons.water_drop,
+                    label: "Humidity",
+                    value: "$humidity%",
+                  ),
+                  _buildWeatherInfoTile(
+                    icon: Icons.air,
+                    label: "Wind Speed",
+                    value: "${windSpeed.toStringAsFixed(1)} km/h",
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // 👨‍💻 Developer credit
+                  const Center(
                     child: Text(
-                      'Developed by Cervantes,Balmedina,Robiego',
+                      "Developed by Team WeatherCompanion",
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
@@ -197,8 +195,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
