@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   runApp(const WeatherCompanionApp());
@@ -18,7 +18,7 @@ class WeatherCompanionApp extends StatelessWidget {
         fontFamily: 'Roboto',
         scaffoldBackgroundColor: Colors.transparent,
       ),
-      home: const HomeScreen(),
+      home: const SplashScreen(), // ✅ Start with splash screen
     );
   }
 }
