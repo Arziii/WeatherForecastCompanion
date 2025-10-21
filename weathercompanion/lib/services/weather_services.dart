@@ -1,46 +1,43 @@
+// lib/services/weather_services.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart'; // For kDebugMode
 
 class WeatherService {
-  final String apiKey = "61a7687ad34f459d9b372408250610";
-  final String baseUrl = "https://api.weatherapi.com/v1/forecast.json";
+  // 🔴 IMPORTANT: Make sure your API key is in here!
+  final String _apiKey = "2a0ed89b3c6945dbbbd134308252110";
+  final String _baseUrl = "https://api.weatherapi.com/v1";
 
-  /// 🌤 Fetch weather by city name (7-day forecast)
-  Future<Map<String, dynamic>?> fetchWeather(String cityName) async {
-    final url = "$baseUrl?key=$apiKey&q=$cityName&days=7&aqi=no&alerts=no";
+  Future<Map<String, dynamic>?> fetchWeather(String city) async {
+    //
+    // ✅ HERE IS THE CHANGE: We set `days=7`
+    //
+    final url =
+        '$_baseUrl/forecast.json?key=$_apiKey&q=$city&days=7&aqi=no&alerts=no';
+
+    if (kDebugMode) {
+      print("Fetching weather from: $url");
+    }
+
     try {
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        return jsonDecode(response.body) as Map<String, dynamic>;
       } else {
-        print("❌ Error: ${response.statusCode}");
+        if (kDebugMode) {
+          print("Failed to load weather: ${response.statusCode}");
+          print("Response body: ${response.body}");
+        }
         return null;
       }
     } catch (e) {
-      print("⚠️ Exception in fetchWeather: $e");
+      if (kDebugMode) {
+        print("An error occurred: $e");
+      }
       return null;
     }
   }
 
-  /// 📍 Fetch weather by GPS coordinates (latitude, longitude)
-  Future<Map<String, dynamic>?> fetchWeatherByCoords(
-    double lat,
-    double lon,
-  ) async {
-    final url = "$baseUrl?key=$apiKey&q=$lat,$lon&days=7&aqi=no&alerts=no";
-    try {
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        print("❌ Error fetching by coordinates: ${response.statusCode}");
-        return null;
-      }
-    } catch (e) {
-      print("⚠️ Exception in fetchWeatherByCoords: $e");
-      return null;
-    }
-  }
+  // ... any other functions you have in this file ...
 }

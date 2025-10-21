@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
-import 'screens/splash_screen.dart';
+import 'package:flutter_gemini/flutter_gemini.dart'; 
+//
+//  THIS IS THE FIX
+//
+import 'package:weathercompanion/screens/splash_screen.dart'; // Removed the extra 'package'
+
+// 
+//  PASTE YOUR API KEY HERE
+//
+const String geminikey = "AIzaSyDRXmCeqy9QuFihb28GqVN_z3JNRX95Dms";
+//
+//
 
 void main() {
+  // ADD THIS
+  Gemini.init(
+    apiKey: geminikey,
+    enableDebugging: true, // We can turn this off later
+  );
+  
   runApp(const WeatherCompanionApp());
 }
 
@@ -11,14 +28,12 @@ class WeatherCompanionApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'WeatherCompanion',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-        scaffoldBackgroundColor: Colors.transparent,
+        primarySwatch: Colors.indigo,
       ),
-      home: const SplashScreen(), // ✅ Start with splash screen
+      home: const SplashScreen(),
     );
   }
 }
