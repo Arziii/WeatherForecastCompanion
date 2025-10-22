@@ -33,7 +33,8 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
     final maxTemp = (day['maxtemp_c'] as num?)?.round() ?? 0;
     final date = widget.dayData['date'] ?? "this day";
 
-    final String prompt = """
+    final String prompt =
+        """
     You are a friendly and helpful weather assistant.
     Your friend is looking at the forecast for $date.
 
@@ -50,7 +51,9 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
 
     try {
       final response = await _gemini.chat(
-        [Content(parts: [Part.text(prompt)], role: 'user')],
+        [
+          Content(parts: [Part.text(prompt)], role: 'user'),
+        ],
         modelName: 'gemini-1.5-flash-latest', // Fast model for quick advice
       );
 
@@ -78,12 +81,12 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
     // ✅ Get the list of hours for this specific day
     final List<dynamic> hourlyData = widget.dayData['hour'] as List? ?? [];
 
-
     String formattedDate = "Forecast";
     try {
       final parsedDate = DateTime.parse(dateStr);
       // Format to "Forecast for Friday, May 17"
-      formattedDate = "Forecast for ${DateFormat('EEEE, MMM d').format(parsedDate)}";
+      formattedDate =
+          "Forecast for ${DateFormat('EEEE, MMM d').format(parsedDate)}";
     } catch (e) {
       // fallback
     }
@@ -140,13 +143,10 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
                   ),
                   Text(
                     condition,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 18,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 18),
                   ),
                 ],
-              )
+              ),
             ],
           ),
           const SizedBox(height: 15),
@@ -186,9 +186,12 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
           ),
           const SizedBox(height: 10),
           if (hourlyData.isEmpty)
-             const Text(
+            const Text(
               "Hourly data not available for this day.",
-              style: TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+              style: TextStyle(
+                color: Colors.white70,
+                fontStyle: FontStyle.italic,
+              ),
             )
           else
             SizedBox(
@@ -207,12 +210,18 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
                     final parsedTime = DateTime.parse(timeStr);
                     // Format like "1 AM", "11 PM" etc.
                     formattedHour = DateFormat('h a').format(parsedTime);
-                  } catch (e) { /* Ignore parsing errors */ }
+                  } catch (e) {
+                    /* Ignore parsing errors */
+                  }
 
                   return Container(
-                    width: 70, // Slightly narrower than main screen hourly cards
+                    width:
+                        70, // Slightly narrower than main screen hourly cards
                     margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
@@ -244,9 +253,9 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
               ),
             ),
           const SizedBox(height: 20), // Space after hourly list
+
           // ✅ --- END OF HOURLY FORECAST SECTION ---
           //
-
           Divider(color: Colors.white.withOpacity(0.2)),
           const SizedBox(height: 20),
 
@@ -315,10 +324,7 @@ class _DetailItem extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
         ),
       ],
     );

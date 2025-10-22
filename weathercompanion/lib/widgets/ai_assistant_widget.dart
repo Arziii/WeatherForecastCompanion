@@ -97,7 +97,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
             final minTemp = (dayData['mintemp_c'] as num?)?.round() ?? '?';
             final maxTemp = (dayData['maxtemp_c'] as num?)?.round() ?? '?';
             final condition = dayData['condition']?['text'] ?? 'N/A';
-            return "Date: $date, Min: ${minTemp}°C, Max: ${maxTemp}°C, Condition: $condition";
+            return "Date: $date, Min: $minTemp°C, Max: $maxTemp°C, Condition: $condition";
           })
           .join("\n");
 

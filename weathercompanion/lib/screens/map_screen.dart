@@ -7,11 +7,7 @@ class MapScreen extends StatelessWidget {
   final LatLng center;
   final String title;
 
-  const MapScreen({
-    super.key,
-    required this.center,
-    required this.title,
-  });
+  const MapScreen({super.key, required this.center, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -21,10 +17,7 @@ class MapScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF3F51B5),
       ),
       body: FlutterMap(
-        options: MapOptions(
-          initialCenter: center,
-          initialZoom: 13.0,
-        ),
+        options: MapOptions(initialCenter: center, initialZoom: 13.0),
         children: [
           TileLayer(
             // UPDATED: Removed the {s} subdomain part

@@ -7,13 +7,12 @@ import 'package:weathercompanion/widgets/weather_icon_image.dart';
 import 'package:weathercompanion/widgets/ai_assistant_widget.dart';
 import 'package:geolocator/geolocator.dart';
 import 'map_screen.dart';
-// ✅ ADD THIS IMPORT FOR TIME FORMATTING
 import 'package:intl/intl.dart';
-
-// ADD: Import the new greeting service
 import 'package:weathercompanion/services/ai_greeting_service.dart';
-// ✅ ADD THIS IMPORT
 import 'package:weathercompanion/widgets/forecast_detail_sheet.dart';
+import 'dart:async'; // Needed for TimeoutException
+import 'package:http/http.dart' as http; // Needed for Nominatim
+import 'dart:convert'; // Needed for jsonDecode
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,111 +23,214 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
+  // <<< Ensure this mixin is present
   final WeatherService _weatherService = WeatherService();
   final TextEditingController _cityController = TextEditingController();
-
-  // ADD: Instantiate the new service
   final AiGreetingService _aiGreetingService = AiGreetingService();
 
-  // ADD: State variable for the greeting text
   String _aiGreeting = "";
-  bool _greetingLoading = false; // Flag to show loading for greeting
+  bool _greetingLoading = false;
 
-  String cityName = "Manila";
+  String cityName = "Manila"; // Default city
   double temperature = 0;
   String weatherDescription = "";
   int humidity = 0;
   double windSpeed = 0;
   String weatherIcon = "";
   List<dynamic> forecastDays = [];
-  bool isLoading = true; // Overall loading state
+  bool isLoading = true; // Overall loading state for weather data
 
   double? _lastLat;
   double? _lastLon;
 
-  late final AnimationController _animationController;
-  late final Animation<double> _bounceAnimation;
+  // Animation Variables - Declare but initialize in initState
+  late AnimationController _animationController;
+  late Animation<double> _bounceAnimation;
+  bool _animationsReady = false; // <<< Flag for animation readiness
 
-  // ✅ ADD THIS NEW STATE VARIABLE
   List<dynamic> forecastHours = [];
 
-  //
-  // ▼▼▼ ALL YOUR NEW/UPDATED LOGIC IS HERE ▼▼▼
-  //
+  // Detailed current conditions
+  double feelsLikeTemp = 0;
+  double uvIndex = 0;
+  int precipitationChance = 0;
+  String sunriseTime = "";
+  String sunsetTime = "";
 
+  // ✅ UPDATED initState
   @override
   void initState() {
     super.initState();
-    // We no longer set the controller text here.
-    // _loadInitialWeather() will trigger the fetch that does it.
 
-    // This now calls your new startup logic
+    // Initialize animations FIRST and safely
+    try {
+      _animationController = AnimationController(
+        vsync: this, // Requires SingleTickerProviderStateMixin
+        duration: const Duration(seconds: 2),
+      )..repeat(reverse: true);
+
+      _bounceAnimation = Tween<double>(begin: 0.0, end: 8.0).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+      );
+      // Mark animations as ready ONLY if initialization succeeds
+      _animationsReady = true;
+      print("Animations initialized successfully.");
+    } catch (e) {
+      print("Error initializing animations: $e");
+      // Keep _animationsReady = false if setup fails
+    }
+
+    // Then schedule the async weather load AFTER the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadInitialWeather();
+      // Check if mounted before calling async function
+      if (mounted) {
+        _loadInitialWeather();
+      }
     });
-
-    // Animation setup
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-
-    _bounceAnimation = Tween<double>(begin: 0.0, end: 8.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
   }
 
+  // ✅ UPDATED dispose
   @override
   void dispose() {
-    _animationController.dispose();
+    // Only dispose if animations were successfully initialized
+    if (_animationsReady) {
+      _animationController.dispose();
+    }
     _cityController.dispose();
     super.dispose();
   }
 
-  /// Fetches weather for the app startup.
-  /// Silently tries to get GPS location.
-  /// Falls back to "Manila" if location is off or denied.
+  // lib/screens/home_screen.dart -> Inside _HomeScreenState
+
   Future<void> _loadInitialWeather() async {
     bool serviceEnabled;
     LocationPermission permission;
+    Position? position;
+    String finalQuery = "Manila"; // Default query
+
+    // Set loading state
+    if (mounted) {
+      setState(() { isLoading = true; _greetingLoading = true; _aiGreeting = ""; });
+    } else {
+      print("Startup Error: Component not mounted at start.");
+      return; // Exit if not mounted
+    }
+
+    print("--- Starting _loadInitialWeather ---");
 
     try {
-      // Check if location services are enabled
+      // 1. Check Services and Permissions
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      // Check if we already have permission
       permission = await Geolocator.checkPermission();
+      print("Startup Checks - Service Enabled: $serviceEnabled, Permission: $permission");
 
       if (serviceEnabled &&
           (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always)) {
-        // PERMISSION GRANTED: Silently get position and fetch weather
-        print("Startup: Location on and permission granted. Fetching by GPS.");
-        Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-        final latLonQuery = "${position.latitude},${position.longitude}";
-        await _fetchWeatherAndGreeting(latLonQuery);
+
+        // 2. Try Last Known Position (LKP)
+        Position? lastKnownPos;
+        try {
+           lastKnownPos = await Geolocator.getLastKnownPosition(
+               // Optional: force Android to use location manager if needed
+               // forceAndroidLocationManager: true
+           );
+           print("Startup LKP: Fetched LKP: (${lastKnownPos?.latitude}, ${lastKnownPos?.longitude}), Timestamp: ${lastKnownPos?.timestamp}");
+        } catch (e) {
+           print("Startup LKP: Error getting LKP: $e");
+        }
+
+
+        // 3. Decide if LKP is usable (e.g., not null and recent - let's try 2 minutes)
+        bool useLKP = false;
+        if (lastKnownPos != null && DateTime.now().difference(lastKnownPos.timestamp!).inMinutes < 2) {
+           print("Startup LKP: LKP is recent enough.");
+           position = lastKnownPos;
+           useLKP = true;
+        } else {
+           print("Startup LKP: LKP is null, too old, or unusable.");
+        }
+
+        // 4. If LKP wasn't usable, try getting Current Position (CP)
+        if (!useLKP) {
+          print("Startup CP: Attempting to get current position (timeout 15s)...");
+          try {
+             position = await Geolocator.getCurrentPosition(
+               desiredAccuracy: LocationAccuracy.high,
+               timeLimit: const Duration(seconds: 15), // Increased timeout slightly
+               // Optional: force Android to use location manager if needed
+               // forceAndroidLocationManager: true
+             );
+             print("Startup CP: Got current position: (${position?.latitude}, ${position?.longitude})");
+          } on TimeoutException {
+             print("Startup CP: Timed out getting current position.");
+             // If CP timed out, but we had an OLD LKP, maybe use that as last resort?
+             if (lastKnownPos != null) {
+                 print("Startup CP Timeout: Falling back to older LKP.");
+                 position = lastKnownPos;
+             } else {
+                 print("Startup CP Timeout: No usable LKP either. Will default to Manila.");
+                 position = null; // Ensure position is null if timeout occurred and no LKP exists
+             }
+          } catch (e) {
+             print("Startup CP: Error getting current position: $e");
+             // If error getting CP, fall back similarly to timeout case
+             if (lastKnownPos != null) {
+                 print("Startup CP Error: Falling back to older LKP.");
+                 position = lastKnownPos;
+             } else {
+                print("Startup CP Error: No usable LKP either. Will default to Manila.");
+                 position = null;
+             }
+          }
+        }
+
+        // 5. Now, attempt Reverse Geocoding if we have any position
+        if (position != null) {
+          print("Startup Geocode: Attempting reverse geocoding with Nominatim for (${position.latitude}, ${position.longitude})");
+          String? cityNameFromCoords = await _getCityNameFromCoords(
+            position.latitude,
+            position.longitude,
+          );
+
+          if (cityNameFromCoords != null && cityNameFromCoords.isNotEmpty) {
+            // Use Nominatim result
+            finalQuery = cityNameFromCoords;
+            print("Startup Geocode: Nominatim successful. Final query will be City Name: '$finalQuery'");
+          } else {
+            // Nominatim failed, use coordinates as fallback
+            finalQuery = "${position.latitude},${position.longitude}";
+            print("Startup Geocode: Nominatim failed. Final query will be Coordinates: '$finalQuery'");
+          }
+        } else {
+          // Failed to get any position
+          print("Startup Geocode: No position obtained. Final query defaults to '$finalQuery'.");
+          // finalQuery remains "Manila"
+        }
+
       } else {
-        // PERMISSION NOT GRANTED: Load default city "Manila"
-        print(
-          "Startup: Location off or permission not granted. Fetching default 'Manila'.",
-        );
-        await _fetchWeatherAndGreeting("Manila");
+        // Location services off or permission denied
+        print("Startup Checks Failed: Location off/denied. Final query defaults to '$finalQuery'.");
+        // finalQuery remains "Manila"
       }
     } catch (e) {
-      // Handle any errors
-      print("Error in _loadInitialWeather: $e. Fetching default 'Manila'.");
-      await _fetchWeatherAndGreeting("Manila");
+      // Catch unexpected errors during the checks/gets
+      print("Startup Error: Unexpected error: $e. Final query defaults to '$finalQuery'.");
+      // finalQuery remains "Manila"
     }
-  }
 
-  /// Tries to get the current location.
-  /// Asks for permission if it's denied.
-  /// Returns a Position object on success, or null on failure.
+    // 6. Final Fetch Call (always happens, using the best query we determined)
+    print("--- Calling _fetchWeatherAndGreeting with final query: '$finalQuery' ---");
+    // Loading state is handled within _fetchWeatherAndGreeting now
+    await _fetchWeatherAndGreeting(finalQuery);
+  }
+  /// Tries to get the current location. (Solution 1 Included)
   Future<Position?> _tryGetCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
+    Position? position;
 
+    // Check Service Enabled
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) {
@@ -139,6 +241,7 @@ class _HomeScreenState extends State<HomeScreen>
       return null;
     }
 
+    // Check Permissions
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -151,7 +254,6 @@ class _HomeScreenState extends State<HomeScreen>
         return null;
       }
     }
-
     if (permission == LocationPermission.deniedForever) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -165,148 +267,241 @@ class _HomeScreenState extends State<HomeScreen>
       return null;
     }
 
-    // If we get here, permissions are granted and service is on.
+    // If permissions are okay, proceed to get location
     try {
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
+      // 1. Try getting the last known position first
+      position = await Geolocator.getLastKnownPosition();
+
+      // 2. Check if it's recent (e.g., within 5 minutes)
+      if (position != null &&
+          DateTime.now().difference(position.timestamp!).inMinutes < 5) {
+        print("Map Button: Using recent last known location.");
+        return position; // Use the recent last known position
+      } else {
+        // 3. If no recent last known, get current position with timeout
+        print(
+          "Map Button: Last known location old or null. Getting current position.",
+        );
+        return await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
       }
+    } catch (e) {
+      // Handle errors specifically for location fetching attempts
+      if (e is TimeoutException) {
+        print("Failed to get location: Timed out.");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not get location fix in time.'),
+            ),
+          );
+        }
+      } else {
+        print("Failed to get location: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
+        }
+      }
+      return null; // Return null on any error
+    }
+  }
+
+  /// Uses OpenStreetMap Nominatim to get city name from coordinates.
+  // lib/screens/home_screen.dart -> Inside _HomeScreenState
+
+  /// Uses OpenStreetMap Nominatim to get city name from coordinates.
+  Future<String?> _getCityNameFromCoords(double lat, double lon) async {
+    // Construct the Nominatim API URL
+    // ✅ CHANGED zoom=10 to zoom=18 for maximum detail
+    // ✅ ADDED &countrycodes=ph to limit results to the Philippines
+    final url = Uri.parse(
+      'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=20&addressdetails=1&countrycodes=ph',
+    );
+
+    print("Querying Nominatim (Philippines Only, Max Detail): $url");
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'User-Agent':
+              'WeatherCompanionApp/1.5.7 (johnbalmedina30@gmail.com)', // Use your app info/contact
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final address = data['address'];
+
+        if (address != null) {
+          // Try to get the most specific locality name possible
+          final String? city = address['city'];
+          final String? town = address['town'];
+          final String? municipality =
+              address['municipality']; // Often used in PH
+          final String? suburb =
+              address['suburb']; // Can sometimes be more specific
+          final String? village = address['village'];
+
+          // Prioritize city/municipality/town, then suburb if available for specificity
+          final String? result =
+              city ?? municipality ?? town ?? suburb ?? village;
+
+          print("Nominatim result (PH): $result");
+          if (result == null) {
+            print(
+              "Nominatim: Could not determine locality name from address details.",
+            );
+          }
+          return result;
+        } else {
+          print("Nominatim: Address details not found in response.");
+          return null;
+        }
+      } else {
+        print("Nominatim request failed with status: ${response.statusCode}");
+        print("Nominatim response body: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("Error calling Nominatim: $e");
       return null;
     }
   }
 
-  // UPDATED: Renamed and combined fetch logic
+  /// Fetches Weather and AI Greeting.
   Future<void> _fetchWeatherAndGreeting([String? queryOverride]) async {
-    // Show main loading spinner only on initial load or location fetch
-    if (!mounted) return; // Prevent state updates if widget is disposed
-    if (isLoading == false || _aiGreeting.isEmpty) {
+    if (!mounted) return;
+    if (!isLoading && !_greetingLoading) {
+      // Check both flags
       setState(() {
         isLoading = true;
-        _greetingLoading = true; // Also indicate greeting is loading
-        _aiGreeting = ""; // Clear old greeting
+        _greetingLoading = true;
+        _aiGreeting = "";
       });
     }
 
-    final query =
+    // Determine the query, preferring override, then controller, then state
+    final String query =
         queryOverride ??
         (_cityController.text.isNotEmpty ? _cityController.text : cityName);
 
-    if (queryOverride != null) {
-      _cityController.clear();
+    // Clear controller only if queryOverride is used AND it's different from current city
+    if (queryOverride != null && queryOverride != cityName) {
+      // Don't clear here, let the setState update it after fetch
+      // _cityController.clear();
     }
 
     print("Fetching weather for query: $query");
-    Map<String, dynamic>? data; // Declare data here
+    Map<String, dynamic>? data;
 
     try {
       data = await _weatherService.fetchWeather(query);
       print("Weather data received: ${data != null}");
 
       if (data != null && mounted) {
-        // Check mounted again before state updates
         final current = data['current'];
         final location = data['location'];
         final forecast = data['forecast']?['forecastday'] ?? [];
+        final todayForecast = (forecast.isNotEmpty) ? forecast[0] : null;
+        final todayAstro = todayForecast?['astro'] ?? {};
+        final todayDay = todayForecast?['day'] ?? {};
 
-        // ✅ --- GET AND FILTER HOURLY FORECAST ---
+        // Filter hourly forecast
         final List<dynamic> allHours =
-            (forecast.isNotEmpty && forecast[0]['hour'] != null)
-            ? (forecast[0]['hour'] as List)
+            (todayForecast != null && todayForecast['hour'] != null)
+            ? (todayForecast['hour'] as List)
             : [];
-
-        final now = DateTime.now();
-
-        // ✅ We filter the list to only show hours from this moment forward
+        final now =
+            DateTime.now(); // Use local time for filtering display hours
         final List<dynamic> newForecastHours = allHours.where((hour) {
           try {
+            // Compare based on the hour part of the timestamp string
             final hourTime = DateTime.parse(hour['time']);
-            // Keep the hour if it's the current hour or in the future
             return hourTime.hour >= now.hour;
           } catch (e) {
             return false;
           }
         }).toList();
-        // ✅ --- END OF HOURLY LOGIC ---
 
+        // Parse ALL data points safely
         final String newCityName = location['name'] ?? cityName;
-        final double newTemp = (current['temp_c'] != null)
-            ? (current['temp_c'] as num).toDouble()
-            : 0;
+        final double newTemp = (current['temp_c'] as num?)?.toDouble() ?? 0;
         final String newDesc = current['condition']?['text'] ?? "";
         final String newIcon = current['condition']?['icon'] ?? "";
-        final int newHumidity = (current['humidity'] is num)
-            ? (current['humidity'] as num).toInt()
-            : 0;
-        final double newWindSpeed = (current['wind_kph'] != null)
-            ? (current['wind_kph'] as num).toDouble()
-            : 0;
-        final double? newLat = (location['lat'] is num)
-            ? (location['lat'] as num).toDouble()
-            : null;
-        final double? newLon = (location['lon'] is num)
-            ? (location['lon'] as num).toDouble()
-            : null;
-
-        // Inside _fetchWeatherAndGreeting() in home_screen.dart...
+        final int newHumidity = (current['humidity'] as num?)?.toInt() ?? 0;
+        final double newWindSpeed =
+            (current['wind_kph'] as num?)?.toDouble() ?? 0;
+        final double? newLat = (location['lat'] as num?)?.toDouble();
+        final double? newLon = (location['lon'] as num?)?.toDouble();
+        final double newFeelsLike =
+            (current['feelslike_c'] as num?)?.toDouble() ?? 0;
+        final double newUvIndex = (current['uv'] as num?)?.toDouble() ?? 0;
+        final int newPrecipChance =
+            (todayDay['daily_chance_of_rain'] as num?)?.toInt() ??
+            (todayDay['daily_chance_of_snow'] as num?)?.toInt() ??
+            0;
+        final String newSunrise = todayAstro['sunrise'] ?? "N/A";
+        final String newSunset = todayAstro['sunset'] ?? "N/A";
 
         // --- Generate Greeting ---
-        //
-        // ✅ THE REAL FIX: Use the local time from the API, NOT DateTime.now()
-        //
         final String localTimeString = location['localtime'] ?? "";
         DateTime currentTime;
-
         try {
-          // Parse the local time string from the API (e.g., "2024-05-16 23:27")
           currentTime = DateTime.parse(localTimeString);
         } catch (e) {
-          // Fallback if parsing fails
           print(
             "Could not parse API localtime string '$localTimeString', falling back to DateTime.now()",
           );
-          currentTime = DateTime.now();
+          currentTime = DateTime.now(); // Use local fallback
         }
-
         print("Attempting to get AI greeting for $currentTime...");
-
-        // Generate greeting in parallel, but don't await yet
         final greetingFuture = _aiGreetingService.generateGreeting(
           newDesc,
           newCityName,
           newTemp,
-          currentTime, // ✅ PASS the *correct* local time from the API
+          currentTime,
         );
 
-        // --- Update UI with Weather First ---
+        // --- Update UI State ---
         print("Updating UI state with weather...");
-        setState(() {
-          cityName = newCityName;
-          temperature = newTemp;
-          weatherDescription = newDesc;
-          weatherIcon = newIcon;
-          humidity = newHumidity;
-          windSpeed = newWindSpeed;
-          forecastDays = forecast;
-          forecastHours = newForecastHours; // ✅ Save the new hourly list
-          _lastLat = newLat;
-          _lastLon = newLon;
-          _cityController.text = newCityName;
-          isLoading = false; // Hide main spinner once weather is ready
-        });
+        if (mounted) {
+          setState(() {
+            cityName = newCityName;
+            temperature = newTemp;
+            weatherDescription = newDesc;
+            weatherIcon = newIcon;
+            humidity = newHumidity;
+            windSpeed = newWindSpeed;
+            feelsLikeTemp = newFeelsLike;
+            uvIndex = newUvIndex;
+            precipitationChance = newPrecipChance;
+            sunriseTime = newSunrise;
+            sunsetTime = newSunset;
+
+            forecastDays = forecast;
+            forecastHours = newForecastHours;
+            _lastLat = newLat;
+            _lastLon = newLon;
+            // Update controller text only if it differs from the fetched city name
+            if (_cityController.text != newCityName) {
+              _cityController.text = newCityName;
+            }
+            isLoading = false; // Main loading done
+          });
+        }
         print("Weather UI state updated.");
 
-        // --- Now wait for greeting and update ---
+        // --- Wait for greeting ---
         final generatedGreeting = await greetingFuture;
         if (mounted) {
-          // Check mounted again
           setState(() {
             _aiGreeting = generatedGreeting;
-            _greetingLoading = false; // Hide greeting loading indicator
+            _greetingLoading = false; // Greeting loading done
           });
           print("AI Greeting received and updated: $_aiGreeting");
         }
@@ -316,6 +511,11 @@ class _HomeScreenState extends State<HomeScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("City not found or network issue.")),
           );
+          if (mounted)
+            setState(() {
+              isLoading = false;
+              _greetingLoading = false;
+            }); // Stop loading on null data
         }
       }
     } catch (e) {
@@ -324,11 +524,15 @@ class _HomeScreenState extends State<HomeScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("An error occurred: $e")));
+        if (mounted)
+          setState(() {
+            isLoading = false;
+            _greetingLoading = false;
+          }); // Stop loading on error
       }
     } finally {
-      print("Finally block reached. Setting all loading states to false.");
-      // Ensure all loading flags are false in the finally block
-      if (mounted) {
+      if (mounted && (isLoading || _greetingLoading)) {
+        print("Finally block cleaning up loading states.");
         setState(() {
           isLoading = false;
           _greetingLoading = false;
@@ -338,27 +542,27 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   /// This is the "Get My Location" button press.
-  /// It now uses the new helper function.
   Future<void> _getUserLocationAndFetchWeather() async {
-    // Show both loading indicators when fetching location
     if (mounted) {
       setState(() {
         isLoading = true;
         _greetingLoading = true;
-        _aiGreeting = ""; // Clear greeting
+        _aiGreeting = "";
       });
     }
 
-    // Try to get the position
     final Position? position = await _tryGetCurrentLocation();
 
     if (position != null) {
-      // SUCCESS: Fetch weather
-      final latLonQuery = "${position.latitude},${position.longitude}";
-      await _fetchWeatherAndGreeting(latLonQuery); // Call the combined function
+      String? cityNameFromCoords = await _getCityNameFromCoords(
+        position.latitude,
+        position.longitude,
+      );
+      String query =
+          cityNameFromCoords ?? "${position.latitude},${position.longitude}";
+      print("My Location Button: Using query: $query");
+      await _fetchWeatherAndGreeting(query);
     } else {
-      // FAILED: (User was already shown a snackbar)
-      // Hide loading indicators
       if (mounted) {
         setState(() {
           isLoading = false;
@@ -383,11 +587,10 @@ class _HomeScreenState extends State<HomeScreen>
       "Nov",
       "Dec",
     ];
-    // Add safety check for month index
     if (month >= 1 && month <= 12) {
       return months[month - 1];
     }
-    return "???"; // Return something if month is invalid
+    return "???";
   }
 
   @override
@@ -396,11 +599,9 @@ class _HomeScreenState extends State<HomeScreen>
     final String formattedToday =
         "${_monthName(now.month)} ${now.day}, ${now.year}";
 
-    // ✅ ADD: This detects if the keyboard is open
     final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
-      // ✅ REMOVED: resizeToAvoidBottomInset: false,
       backgroundColor: const Color(0xFF3949AB),
       body: SafeArea(
         child: Stack(
@@ -409,13 +610,13 @@ class _HomeScreenState extends State<HomeScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               child: SingleChildScrollView(
-                // This padding ensures content can scroll above the map button
                 padding: const EdgeInsets.only(bottom: 130),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Header
                     Row(
+                      /* ... Header Content ... */
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Image.asset(
@@ -426,7 +627,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          "WeatherCompanion • Beta v1.5.0",
+                          "WeatherCompanion • Beta v1.5.6", // Update version as needed
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -440,6 +641,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     // Search Bar + Buttons
                     Row(
+                      /* ... Search Bar Content ... */
                       children: [
                         Expanded(
                           child: TextField(
@@ -460,9 +662,7 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
                             onSubmitted: (value) {
-                              if (value.isNotEmpty) {
-                                _fetchWeatherAndGreeting();
-                              }
+                              if (value.isNotEmpty) _fetchWeatherAndGreeting();
                             },
                           ),
                         ),
@@ -476,7 +676,8 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.white),
-                          onPressed: _fetchWeatherAndGreeting,
+                          // Refresh uses the current _cityController text or last known cityName
+                          onPressed: () => _fetchWeatherAndGreeting(null),
                         ),
                       ],
                     ),
@@ -484,6 +685,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     // City name
                     Text(
+                      /* ... City Name ... */
                       cityName,
                       style: const TextStyle(
                         color: Colors.white,
@@ -496,8 +698,10 @@ class _HomeScreenState extends State<HomeScreen>
                     // Weather Card (or Loading)
                     if (isLoading)
                       const Center(
+                        /* ... Loading Indicator ... */
                         child: SizedBox(
-                          height: 160, // Adjusted height slightly
+                          height:
+                              200, // Increased height to accommodate new details
                           child: Center(
                             child: CircularProgressIndicator(
                               color: Colors.white,
@@ -507,31 +711,36 @@ class _HomeScreenState extends State<HomeScreen>
                       )
                     else
                       WeatherCard(
+                        /* ... Weather Card Content ... */
                         temperature: temperature,
                         icon: weatherIcon,
                         description: weatherDescription,
                         date: formattedToday,
                         humidity: humidity,
                         windSpeed: windSpeed,
+                        feelsLikeTemp: feelsLikeTemp,
+                        uvIndex: uvIndex,
+                        precipitationChance: precipitationChance,
+                        sunriseTime: sunriseTime,
+                        sunsetTime: sunsetTime,
                       ),
-                    // Use SizedBox consistently for spacing
                     const SizedBox(height: 25),
 
-                    //
-                    // ▼▼▼ THIS IS THE CORRECTED GREETING & HOURLY SECTION ▼▼▼
-                    //
-                    // AI Greeting Widget (or Loading)
+                    // AI Greeting Widget (or Loading) with Mascot (Stacked)
                     if (_greetingLoading)
-                      Center(
+                      const Center(
+                        /* ... Greeting Loading ... */
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20.0),
+                          padding: EdgeInsets.symmetric(vertical: 20.0),
                           child: CircularProgressIndicator(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white,
+                            strokeWidth: 2.0,
                           ),
                         ),
                       )
                     else if (_aiGreeting.isNotEmpty)
                       Container(
+                        /* ... Greeting Content ... */
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20,
@@ -544,28 +753,39 @@ class _HomeScreenState extends State<HomeScreen>
                             color: Colors.white.withOpacity(0.2),
                           ),
                         ),
-                        child: Text(
-                          _aiGreeting,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 15,
-                            fontStyle: FontStyle.italic,
-                            height: 1.4,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/images/logo.png',
+                              height: 40,
+                              width: 40,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _aiGreeting,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 15,
+                                fontStyle: FontStyle.italic,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
                       )
-                    // If greeting isn't loading AND is empty, show nothing
                     else if (!_greetingLoading && _aiGreeting.isEmpty)
-                      const SizedBox.shrink(), // Takes up zero space
-                    // Consistent space *after* the greeting area (only if it exists or was loading)
+                      const SizedBox.shrink(),
+
                     if (_greetingLoading || _aiGreeting.isNotEmpty)
                       const SizedBox(height: 25),
 
                     // Hourly Forecast
                     if (!isLoading && forecastHours.isNotEmpty) ...[
+                      /* ... Hourly Forecast List ... */
                       SizedBox(
-                        height: 110, // Height for the hourly cards
+                        height: 110,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: forecastHours.length,
@@ -576,35 +796,29 @@ class _HomeScreenState extends State<HomeScreen>
                                 (hourData['temp_c'] as num?)?.round() ?? 0;
                             final iconUrl =
                                 hourData['condition']?['icon'] ?? "";
-
-                            // Format the time string
-                            String formattedTime = "Now";
+                            String formattedTime = "N/A";
                             DateTime? parsedTime;
                             try {
                               parsedTime = DateTime.parse(timeStr);
-                              // Format like "6 PM", "7 PM"
                               formattedTime = DateFormat(
                                 'h a',
                               ).format(parsedTime);
                             } catch (e) {
-                              // keep default
+                              /* keep N/A */
                             }
-                            // Show "Now" for the current hour, check if parsedTime is not null
+
                             bool isNow =
                                 index == 0 &&
                                 parsedTime != null &&
                                 parsedTime.hour == DateTime.now().hour;
-                            if (isNow) {
-                              formattedTime = "Now";
-                            }
+                            if (isNow) formattedTime = "Now";
 
                             return Container(
-                              width: 80, // Smaller cards
+                              width: 80,
                               margin: const EdgeInsets.only(right: 10),
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color:
-                                    isNow // Highlight "Now"
+                                color: isNow
                                     ? Colors.white.withOpacity(0.35)
                                     : Colors.white.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(12),
@@ -626,12 +840,12 @@ class _HomeScreenState extends State<HomeScreen>
                                       fontSize: 15,
                                     ),
                                   ),
-                                  const SizedBox(height: 5), // Reduced spacing
+                                  const SizedBox(height: 5),
                                   WeatherIconImage(
                                     iconUrl: iconUrl,
                                     size: 35.0,
                                   ),
-                                  const SizedBox(height: 5), // Reduced spacing
+                                  const SizedBox(height: 5),
                                   Text(
                                     "$temp°",
                                     style: const TextStyle(
@@ -645,15 +859,12 @@ class _HomeScreenState extends State<HomeScreen>
                           },
                         ),
                       ),
-                      // Space *after* the hourly forecast
                       const SizedBox(height: 25),
-                    ], // End of hourly forecast section
-                    //
-                    // ▲▲▲ END OF CORRECTED SECTION ▲▲▲
-                    //
+                    ],
 
                     // 7-Day Forecast (Starts Tomorrow)
                     if (!isLoading && forecastDays.isNotEmpty) ...[
+                      /* ... 7-Day Forecast List ... */
                       SizedBox(
                         height: 130,
                         child: ListView.builder(
@@ -662,8 +873,7 @@ class _HomeScreenState extends State<HomeScreen>
                               ? forecastDays.length - 1
                               : 0,
                           itemBuilder: (context, index) {
-                            final day =
-                                forecastDays[index + 1]; // Start from tomorrow
+                            final day = forecastDays[index + 1];
                             final dateStr = day['date'] ?? "";
                             DateTime parsed =
                                 DateTime.tryParse(dateStr) ?? DateTime.now();
@@ -674,12 +884,10 @@ class _HomeScreenState extends State<HomeScreen>
                                 dayInfo['condition']?['text'] ?? "";
                             final String forecastIconUrl =
                                 dayInfo['condition']?['icon'] ?? "";
-                            final minTemp = (dayInfo['mintemp_c'] is num)
-                                ? (dayInfo['mintemp_c'] as num).toInt()
-                                : 0;
-                            final maxTemp = (dayInfo['maxtemp_c'] is num)
-                                ? (dayInfo['maxtemp_c'] as num).toInt()
-                                : 0;
+                            final minTemp =
+                                (dayInfo['mintemp_c'] as num?)?.toInt() ?? 0;
+                            final maxTemp =
+                                (dayInfo['maxtemp_c'] as num?)?.toInt() ?? 0;
 
                             return InkWell(
                               onTap: () {
@@ -687,9 +895,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   context: context,
                                   isScrollControlled: true,
                                   backgroundColor: Colors.transparent,
-                                  builder: (context) {
-                                    return ForecastDetailSheet(dayData: day);
-                                  },
+                                  builder: (context) =>
+                                      ForecastDetailSheet(dayData: day),
                                 );
                               },
                               borderRadius: BorderRadius.circular(12),
@@ -745,6 +952,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     // AI Chat box
                     AiAssistantWidget(
+                      /* ... AI Chat Box ... */
                       cityName: cityName,
                       temperature: temperature,
                       weatherDescription: weatherDescription,
@@ -757,9 +965,10 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
 
-            // ✅ MODIFIED: Footer is now wrapped in Visibility
+            // Footer
             Visibility(
-              visible: !isKeyboardOpen, // Hides when keyboard is open
+              /* ... Footer Content ... */
+              visible: !isKeyboardOpen,
               child: Positioned(
                 bottom: 0,
                 left: 0,
@@ -780,64 +989,57 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
 
-      // ✅ ADDED: The map button is now in its proper place
+      // ✅ UPDATED floatingActionButton with _animationsReady check
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: AnimatedBuilder(
-        animation: _bounceAnimation,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(0, -_bounceAnimation.value),
-            child: child,
-          );
-        },
-        //
-        // ✅ --- THIS IS THE UPDATED BUTTON WITH NEW LOGIC ---
-        //
-        child: FloatingActionButton(
-          backgroundColor: Colors.white.withOpacity(0.30),
-          elevation: 6.0,
-          onPressed: () async {
-            // 1. Try to get the user's current GPS location
-            Position? position = await _tryGetCurrentLocation();
-
-            if (position != null) {
-              // 2. SUCCESS: Open map centered on "My Location"
-              print("Map Button: Got current location. Opening map.");
-              if (mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MapScreen(
-                      center: LatLng(position.latitude, position.longitude),
-                      title: "My Location",
-                    ),
-                  ),
+      floatingActionButton:
+          _animationsReady // Conditionally build
+          ? AnimatedBuilder(
+              animation: _bounceAnimation,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(0, -_bounceAnimation.value),
+                  child: child,
                 );
-              }
-            } else {
-              // 3. FAILED: Open map centered on the last searched city
-              print(
-                "Map Button: Could not get location. Using last city: $cityName",
-              );
-              final lat = _lastLat ?? 14.5995; // Default to Manila
-              final lon = _lastLon ?? 120.9842; // Default to Manila
-              if (mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        MapScreen(center: LatLng(lat, lon), title: cityName),
-                  ),
-                );
-              }
-            }
-          },
-          child: const Icon(Icons.map, color: Color(0xFF3949AB), size: 24),
-        ),
-        //
-        // ✅ --- END OF UPDATED BUTTON ---
-        //
-      ),
+              },
+              child: FloatingActionButton(
+                backgroundColor: Colors.white, // Changed from transparent white
+                elevation: 6.0,
+                onPressed: () async {
+                  Position? position = await _tryGetCurrentLocation();
+                  // Add mounted checks AFTER await
+                  if (!mounted) return;
+                  if (position != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MapScreen(
+                          center: LatLng(position.latitude, position.longitude),
+                          title: "My Location",
+                        ),
+                      ),
+                    );
+                  } else {
+                    final lat = _lastLat ?? 14.5995; // Default Manila Lat
+                    final lon = _lastLon ?? 120.9842; // Default Manila Lon
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MapScreen(
+                          center: LatLng(lat, lon),
+                          title: cityName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: const Icon(
+                  Icons.map,
+                  color: Color(0xFF3949AB),
+                  size: 24,
+                ),
+              ),
+            )
+          : null, // Don't show button if animations aren't ready
     );
   }
 }

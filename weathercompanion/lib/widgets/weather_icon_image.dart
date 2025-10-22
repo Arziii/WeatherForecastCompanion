@@ -4,11 +4,7 @@ class WeatherIconImage extends StatelessWidget {
   final String iconUrl;
   final double size;
 
-  const WeatherIconImage({
-    super.key,
-    required this.iconUrl,
-    this.size = 64.0,
-  });
+  const WeatherIconImage({super.key, required this.iconUrl, this.size = 64.0});
 
   // This helper function adds 'https:' to URLs that start with '//'
   String _formatIconUrl(String url) {
@@ -25,10 +21,7 @@ class WeatherIconImage extends StatelessWidget {
       return SizedBox(
         width: size,
         height: size,
-        child: const Icon(
-          Icons.cloud_off_outlined,
-          color: Colors.white70,
-        ),
+        child: const Icon(Icons.cloud_off_outlined, color: Colors.white70),
       );
     }
 
@@ -49,7 +42,7 @@ class WeatherIconImage extends StatelessWidget {
               color: Colors.white,
               value: loadingProgress.expectedTotalBytes != null
                   ? loadingProgress.cumulativeBytesLoaded /
-                      loadingProgress.expectedTotalBytes!
+                        loadingProgress.expectedTotalBytes!
                   : null,
             ),
           ),
@@ -60,10 +53,7 @@ class WeatherIconImage extends StatelessWidget {
         return SizedBox(
           width: size,
           height: size,
-          child: const Icon(
-            Icons.cloud_off,
-            color: Colors.white70,
-          ),
+          child: const Icon(Icons.cloud_off, color: Colors.white70),
         );
       },
     );
