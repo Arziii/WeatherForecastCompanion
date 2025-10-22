@@ -45,14 +45,19 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _animationController;
   late final Animation<double> _bounceAnimation;
 
+  //
+  // ▼▼▼ ALL YOUR NEW/UPDATED LOGIC IS HERE ▼▼▼
+  //
+
   @override
   void initState() {
     super.initState();
-    _cityController.text = cityName;
+    // We no longer set the controller text here.
+    // _loadInitialWeather() will trigger the fetch that does it.
 
-    // This correctly calls your combined function after the first frame
+    // This now calls your new startup logic
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchWeatherAndGreeting();
+      _loadInitialWeather();
     });
 
     // Animation setup
@@ -73,6 +78,100 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  /// Fetches weather for the app startup.
+  /// Silently tries to get GPS location.
+  /// Falls back to "Manila" if location is off or denied.
+  Future<void> _loadInitialWeather() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    try {
+      // Check if location services are enabled
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      // Check if we already have permission
+      permission = await Geolocator.checkPermission();
+
+      if (serviceEnabled &&
+          (permission == LocationPermission.whileInUse ||
+              permission == LocationPermission.always)) {
+        // PERMISSION GRANTED: Silently get position and fetch weather
+        print("Startup: Location on and permission granted. Fetching by GPS.");
+        Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+        final latLonQuery = "${position.latitude},${position.longitude}";
+        await _fetchWeatherAndGreeting(latLonQuery);
+      } else {
+        // PERMISSION NOT GRANTED: Load default city "Manila"
+        print(
+            "Startup: Location off or permission not granted. Fetching default 'Manila'.");
+        await _fetchWeatherAndGreeting("Manila");
+      }
+    } catch (e) {
+      // Handle any errors
+      print("Error in _loadInitialWeather: $e. Fetching default 'Manila'.");
+      await _fetchWeatherAndGreeting("Manila");
+    }
+  }
+
+  /// Tries to get the current location.
+  /// Asks for permission if it's denied.
+  /// Returns a Position object on success, or null on failure.
+  Future<Position?> _tryGetCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled.')),
+        );
+      }
+      return null;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied')),
+          );
+        }
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location permissions are permanently denied, we cannot request permissions.',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+
+    // If we get here, permissions are granted and service is on.
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
+      }
+      return null;
+    }
+  }
+
   // UPDATED: Renamed and combined fetch logic
   Future<void> _fetchWeatherAndGreeting([String? queryOverride]) async {
     // Show main loading spinner only on initial load or location fetch
@@ -85,8 +184,7 @@ class _HomeScreenState extends State<HomeScreen>
       });
     }
 
-    final query =
-        queryOverride ??
+    final query = queryOverride ??
         (_cityController.text.isNotEmpty ? _cityController.text : cityName);
 
     if (queryOverride != null) {
@@ -213,66 +311,33 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  /// This is the "Get My Location" button press.
+  /// It now uses the new helper function.
   Future<void> _getUserLocationAndFetchWeather() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled.')),
-        );
-      }
-      return;
+    // Show both loading indicators when fetching location
+    if (mounted) {
+      setState(() {
+        isLoading = true;
+        _greetingLoading = true;
+        _aiGreeting = ""; // Clear greeting
+      });
     }
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permissions are denied')),
-          );
-        }
-        return;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Location permissions are permanently denied, we cannot request permissions.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
-    try {
-      // Show both loading indicators when fetching location
-      if (mounted) {
-        setState(() {
-          isLoading = true;
-          _greetingLoading = true;
-          _aiGreeting = ""; // Clear greeting
-        });
-      }
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.low,
-      );
+
+    // Try to get the position
+    final Position? position = await _tryGetCurrentLocation();
+
+    if (position != null) {
+      // SUCCESS: Fetch weather
       final latLonQuery = "${position.latitude},${position.longitude}";
       await _fetchWeatherAndGreeting(latLonQuery); // Call the combined function
-    } catch (e) {
+    } else {
+      // FAILED: (User was already shown a snackbar)
+      // Hide loading indicators
       if (mounted) {
         setState(() {
-          // Hide both indicators on error
           isLoading = false;
           _greetingLoading = false;
         });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
       }
     }
   }
@@ -484,8 +549,8 @@ class _HomeScreenState extends State<HomeScreen>
 
                             final bool isToday =
                                 parsed.day == DateTime.now().day &&
-                                parsed.month == DateTime.now().month &&
-                                parsed.year == DateTime.now().year;
+                                    parsed.month == DateTime.now().month &&
+                                    parsed.year == DateTime.now().year;
 
                             return Container(
                               width: 110,
@@ -543,7 +608,15 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 25),
 
                     // AI Chat box
-                    const AiAssistantWidget(),
+                    // ✅ We now pass all our weather data into the widget
+                    AiAssistantWidget(
+                      cityName: cityName,
+                      temperature: temperature,
+                      weatherDescription: weatherDescription,
+                      forecastDays: forecastDays,
+                      isLoading: isLoading, // Pass the loading flag too
+                    ),
+                    const SizedBox(height: 40),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -584,28 +657,52 @@ class _HomeScreenState extends State<HomeScreen>
           );
         },
         //
-        // ✅ --- THIS IS THE UPDATED BUTTON ---
+        // ✅ --- THIS IS THE UPDATED BUTTON WITH NEW LOGIC ---
         //
         child: FloatingActionButton(
-          backgroundColor: Colors.white.withOpacity(
-            0.35,
-          ), // Solid white background
-          elevation: 6.0, // Adds a shadow to "pop"
-          onPressed: () {
-            final lat = _lastLat ?? 14.5995;
-            final lon = _lastLon ?? 120.9842;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    MapScreen(center: LatLng(lat, lon), title: cityName),
-              ),
-            );
+          backgroundColor: Colors.white,
+          elevation: 6.0,
+          onPressed: () async {
+            // 1. Try to get the user's current GPS location
+            Position? position = await _tryGetCurrentLocation();
+
+            if (position != null) {
+              // 2. SUCCESS: Open map centered on "My Location"
+              print("Map Button: Got current location. Opening map.");
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MapScreen(
+                      center: LatLng(position.latitude, position.longitude),
+                      title: "My Location",
+                    ),
+                  ),
+                );
+              }
+            } else {
+              // 3. FAILED: Open map centered on the last searched city
+              print(
+                  "Map Button: Could not get location. Using last city: $cityName");
+              final lat = _lastLat ?? 14.5995; // Default to Manila
+              final lon = _lastLon ?? 120.9842; // Default to Manila
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MapScreen(
+                      center: LatLng(lat, lon),
+                      title: cityName,
+                    ),
+                  ),
+                );
+              }
+            }
           },
           child: const Icon(
             Icons.map,
-            color: Color(0xFF3949AB), // Blue icon to contrast
-            size: 24, // Slightly larger
+            color: Color(0xFF3949AB),
+            size: 24,
           ),
         ),
         //

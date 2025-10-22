@@ -1,9 +1,25 @@
+// lib/widgets/ai_assistant_widget.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
-import 'dart:async'; // For the delayed scroll
+import 'dart:async';
 
 class AiAssistantWidget extends StatefulWidget {
-  const AiAssistantWidget({super.key});
+  // ✅ ADD: New variables to receive data
+  final String cityName;
+  final double temperature;
+  final String weatherDescription;
+  final List<dynamic> forecastDays;
+  final bool isLoading;
+
+  const AiAssistantWidget({
+    super.key,
+    // ✅ ADD: Make them required
+    required this.cityName,
+    required this.temperature,
+    required this.weatherDescription,
+    required this.forecastDays,
+    required this.isLoading,
+  });
 
   @override
   State<AiAssistantWidget> createState() => _AiAssistantWidgetState();
@@ -13,11 +29,9 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final Gemini _gemini = Gemini.instance;
-
-  // This FocusNode is now the key
   final FocusNode _focusNode = FocusNode();
 
-  bool _isLoading = false;
+  bool _isChatLoading = false; // Renamed to avoid confusion
   final List<Map<String, String>> _chatHistory = [];
 
   @override
@@ -26,10 +40,8 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     _chatHistory.add({
       'role': 'model',
       'text':
-          'Hello! Companion! I am your AI assistant. Feel free to ask me anything about the weather or just have a chat!',
+          'Hello! I am your AI Assistant. Ask me anything about the weather!',
     });
-
-    // Add the listener
     _focusNode.addListener(_onFocusChange);
   }
 
@@ -42,23 +54,13 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     super.dispose();
   }
 
-  // This function will now work correctly
   void _onFocusChange() {
     if (_focusNode.hasFocus) {
-      // Delay to allow keyboard to start animating
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
-          // Find the RenderObject of this widget
-          final RenderBox renderBox = context.findRenderObject() as RenderBox;
-          // Find its position relative to the nearest Viewport
-          // (which is the SingleChildScrollView)
-          final offset = renderBox.localToGlobal(Offset.zero, 
-              ancestor: Scrollable.of(context).context.findRenderObject());
-
-          // Animate the scroll view
           Scrollable.of(context).position.ensureVisible(
-                renderBox,
-                alignment: 0.1, // Aligns to 10% from the top of the viewport
+                context.findRenderObject()!,
+                alignment: 0.1,
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeInOut,
               );
@@ -67,28 +69,73 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     }
   }
 
+  //
+  // ✅ --- THIS IS THE MAIN UPGRADE --- ✅
+  //
   void _sendMessage() {
     if (_chatController.text.isEmpty) return;
+
     final String userMessage = _chatController.text;
     _chatController.clear();
-    _focusNode.unfocus(); // Hide keyboard
+    _focusNode.unfocus();
 
     setState(() {
-      _isLoading = true;
+      _isChatLoading = true;
       _chatHistory.add({'role': 'user', 'text': userMessage});
       _scrollToBottom();
     });
 
+    // 1. Check if we have real data from the home screen
+    final bool hasRealData = !widget.isLoading && widget.forecastDays.isNotEmpty;
+    
+    // 2. Build a context-aware prompt
+    String contextPrompt;
+    if (hasRealData) {
+      // Create a clean summary of the forecast
+      final forecastSummary = widget.forecastDays.map((day) {
+        return "Date: ${day['date']}, Min: ${day['day']['mintemp_c']}°C, Max: ${day['day']['maxtemp_c']}°C, Condition: ${day['day']['condition']['text']}";
+      }).join("\n");
+
+      contextPrompt = """
+      You are a helpful AI weather assistant. 
+      Use the following **current weather data** to answer my question.
+
+      CURRENT DATA:
+      - Location: ${widget.cityName}
+      - Temperature: ${widget.temperature.round()}°C
+      - Condition: ${widget.weatherDescription}
+      - 7-Day Forecast: \n$forecastSummary
+
+      Based on that data, please answer my question:
+      """;
+    } else {
+      // Fallback if data isn't loaded yet
+      contextPrompt = """
+      You are a helpful AI assistant. 
+      I don't have my weather data loaded yet, so just answer this general question:
+      """;
+    }
+
+    // 3. Create the final list of messages
+    final List<Content> chatMessages = [
+      // This combines the context and the user's question
+      Content(
+        parts: [Part.text("$contextPrompt\n\n$userMessage")], 
+        role: 'user'
+      )
+    ];
+
+    // Send to Gemini
     _gemini
         .chat(
-      [Content(parts: [Part.text(userMessage)], role: 'user')],
+      chatMessages, // ✅ Pass the new, context-rich messages
       modelName: 'gemini-pro',
     )
         .then((response) {
       final String? modelResponse = response?.output;
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isChatLoading = false;
           _chatHistory.add({
             'role': 'model',
             'text':
@@ -100,7 +147,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     }).catchError((e) {
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isChatLoading = false;
           _chatHistory.add({
             'role': 'model',
             'text': 'Error: ${e.toString()}',
@@ -165,7 +212,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
               },
             ),
           ),
-          if (_isLoading)
+          if (_isChatLoading) // Use the renamed variable
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
               child: LinearProgressIndicator(
@@ -180,11 +227,11 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
               children: [
                 Expanded(
                   child: TextField(
-                    focusNode: _focusNode, // Assign the FocusNode
+                    focusNode: _focusNode,
                     controller: _chatController,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: "Ask me anything...",
+                      hintText: "Ask me about the weather...", // Updated hint
                       hintStyle: const TextStyle(color: Colors.white70),
                       filled: true,
                       fillColor: Colors.white.withOpacity(0.2),
