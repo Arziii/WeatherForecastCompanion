@@ -102,11 +102,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   // lib/screens/home_screen.dart -> Inside _HomeScreenState
 
+  // lib/screens/home_screen.dart -> Inside _HomeScreenState
+
   Future<void> _loadInitialWeather() async {
     bool serviceEnabled;
     LocationPermission permission;
-    Position? position;
-    String finalQuery = "Manila"; // Default query
+    Position? position; // Keep this to store the result
+    String finalQuery = "Manila"; // Start with default
 
     // Set loading state
     if (mounted) {
@@ -116,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen>
       return; // Exit if not mounted
     }
 
-    print("--- Starting _loadInitialWeather ---");
+    print("--- Starting _loadInitialWeather (Skipping Last Known Location) ---");
 
     try {
       // 1. Check Services and Permissions
@@ -128,64 +130,23 @@ class _HomeScreenState extends State<HomeScreen>
           (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always)) {
 
-        // 2. Try Last Known Position (LKP)
-        Position? lastKnownPos;
+        // 2. Directly attempt to get Current Position (CP)
+        print("Startup CP: Attempting to get current position (timeout 15s)...");
         try {
-           lastKnownPos = await Geolocator.getLastKnownPosition(
-               // Optional: force Android to use location manager if needed
-               // forceAndroidLocationManager: true
+           position = await Geolocator.getCurrentPosition(
+             desiredAccuracy: LocationAccuracy.high,
+             timeLimit: const Duration(seconds: 15), // Keep timeout
            );
-           print("Startup LKP: Fetched LKP: (${lastKnownPos?.latitude}, ${lastKnownPos?.longitude}), Timestamp: ${lastKnownPos?.timestamp}");
+           print("Startup CP: Got current position: (${position?.latitude}, ${position?.longitude})");
+        } on TimeoutException {
+           print("Startup CP: Timed out getting current position. Will default to Manila.");
+           position = null; // Ensure position is null on timeout
         } catch (e) {
-           print("Startup LKP: Error getting LKP: $e");
+           print("Startup CP: Error getting current position: $e. Will default to Manila.");
+           position = null; // Ensure position is null on error
         }
 
-
-        // 3. Decide if LKP is usable (e.g., not null and recent - let's try 2 minutes)
-        bool useLKP = false;
-        if (lastKnownPos != null && DateTime.now().difference(lastKnownPos.timestamp!).inMinutes < 2) {
-           print("Startup LKP: LKP is recent enough.");
-           position = lastKnownPos;
-           useLKP = true;
-        } else {
-           print("Startup LKP: LKP is null, too old, or unusable.");
-        }
-
-        // 4. If LKP wasn't usable, try getting Current Position (CP)
-        if (!useLKP) {
-          print("Startup CP: Attempting to get current position (timeout 15s)...");
-          try {
-             position = await Geolocator.getCurrentPosition(
-               desiredAccuracy: LocationAccuracy.high,
-               timeLimit: const Duration(seconds: 15), // Increased timeout slightly
-               // Optional: force Android to use location manager if needed
-               // forceAndroidLocationManager: true
-             );
-             print("Startup CP: Got current position: (${position?.latitude}, ${position?.longitude})");
-          } on TimeoutException {
-             print("Startup CP: Timed out getting current position.");
-             // If CP timed out, but we had an OLD LKP, maybe use that as last resort?
-             if (lastKnownPos != null) {
-                 print("Startup CP Timeout: Falling back to older LKP.");
-                 position = lastKnownPos;
-             } else {
-                 print("Startup CP Timeout: No usable LKP either. Will default to Manila.");
-                 position = null; // Ensure position is null if timeout occurred and no LKP exists
-             }
-          } catch (e) {
-             print("Startup CP: Error getting current position: $e");
-             // If error getting CP, fall back similarly to timeout case
-             if (lastKnownPos != null) {
-                 print("Startup CP Error: Falling back to older LKP.");
-                 position = lastKnownPos;
-             } else {
-                print("Startup CP Error: No usable LKP either. Will default to Manila.");
-                 position = null;
-             }
-          }
-        }
-
-        // 5. Now, attempt Reverse Geocoding if we have any position
+        // 3. Now, attempt Reverse Geocoding if we got a position
         if (position != null) {
           print("Startup Geocode: Attempting reverse geocoding with Nominatim for (${position.latitude}, ${position.longitude})");
           String? cityNameFromCoords = await _getCityNameFromCoords(
@@ -198,13 +159,13 @@ class _HomeScreenState extends State<HomeScreen>
             finalQuery = cityNameFromCoords;
             print("Startup Geocode: Nominatim successful. Final query will be City Name: '$finalQuery'");
           } else {
-            // Nominatim failed, use coordinates as fallback
+            // Nominatim failed, use coordinates
             finalQuery = "${position.latitude},${position.longitude}";
             print("Startup Geocode: Nominatim failed. Final query will be Coordinates: '$finalQuery'");
           }
         } else {
-          // Failed to get any position
-          print("Startup Geocode: No position obtained. Final query defaults to '$finalQuery'.");
+          // Failed to get any position from getCurrentPosition
+          print("Startup Geocode: Failed to get current position. Final query defaults to '$finalQuery'.");
           // finalQuery remains "Manila"
         }
 
@@ -219,7 +180,7 @@ class _HomeScreenState extends State<HomeScreen>
       // finalQuery remains "Manila"
     }
 
-    // 6. Final Fetch Call (always happens, using the best query we determined)
+    // 4. Final Fetch Call (always happens, using the best query we determined)
     print("--- Calling _fetchWeatherAndGreeting with final query: '$finalQuery' ---");
     // Loading state is handled within _fetchWeatherAndGreeting now
     await _fetchWeatherAndGreeting(finalQuery);
@@ -627,7 +588,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          "WeatherCompanion • Beta v1.5.6", // Update version as needed
+                          "WeatherCompanion • Beta v1.5.8", // Update version as needed
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
