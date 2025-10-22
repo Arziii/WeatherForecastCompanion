@@ -7,9 +7,13 @@ import 'package:weathercompanion/widgets/weather_icon_image.dart';
 import 'package:weathercompanion/widgets/ai_assistant_widget.dart';
 import 'package:geolocator/geolocator.dart';
 import 'map_screen.dart';
+// ✅ ADD THIS IMPORT FOR TIME FORMATTING
+import 'package:intl/intl.dart';
 
 // ADD: Import the new greeting service
 import 'package:weathercompanion/services/ai_greeting_service.dart';
+// ✅ ADD THIS IMPORT
+import 'package:weathercompanion/widgets/forecast_detail_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -44,6 +48,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   late final AnimationController _animationController;
   late final Animation<double> _bounceAnimation;
+
+  // ✅ ADD THIS NEW STATE VARIABLE
+  List<dynamic> forecastHours = [];
 
   //
   // ▼▼▼ ALL YOUR NEW/UPDATED LOGIC IS HERE ▼▼▼
@@ -104,7 +111,8 @@ class _HomeScreenState extends State<HomeScreen>
       } else {
         // PERMISSION NOT GRANTED: Load default city "Manila"
         print(
-            "Startup: Location off or permission not granted. Fetching default 'Manila'.");
+          "Startup: Location off or permission not granted. Fetching default 'Manila'.",
+        );
         await _fetchWeatherAndGreeting("Manila");
       }
     } catch (e) {
@@ -184,7 +192,8 @@ class _HomeScreenState extends State<HomeScreen>
       });
     }
 
-    final query = queryOverride ??
+    final query =
+        queryOverride ??
         (_cityController.text.isNotEmpty ? _cityController.text : cityName);
 
     if (queryOverride != null) {
@@ -203,6 +212,26 @@ class _HomeScreenState extends State<HomeScreen>
         final current = data['current'];
         final location = data['location'];
         final forecast = data['forecast']?['forecastday'] ?? [];
+
+        // ✅ --- GET AND FILTER HOURLY FORECAST ---
+        final List<dynamic> allHours =
+            (forecast.isNotEmpty && forecast[0]['hour'] != null)
+            ? (forecast[0]['hour'] as List)
+            : [];
+
+        final now = DateTime.now();
+
+        // ✅ We filter the list to only show hours from this moment forward
+        final List<dynamic> newForecastHours = allHours.where((hour) {
+          try {
+            final hourTime = DateTime.parse(hour['time']);
+            // Keep the hour if it's the current hour or in the future
+            return hourTime.hour >= now.hour;
+          } catch (e) {
+            return false;
+          }
+        }).toList();
+        // ✅ --- END OF HOURLY LOGIC ---
 
         final String newCityName = location['name'] ?? cityName;
         final double newTemp = (current['temp_c'] != null)
@@ -255,10 +284,6 @@ class _HomeScreenState extends State<HomeScreen>
 
         // --- Update UI with Weather First ---
         print("Updating UI state with weather...");
-        // ... the rest of your function continues here ...
-
-        // --- Update UI with Weather First ---
-        print("Updating UI state with weather...");
         setState(() {
           cityName = newCityName;
           temperature = newTemp;
@@ -267,6 +292,7 @@ class _HomeScreenState extends State<HomeScreen>
           humidity = newHumidity;
           windSpeed = newWindSpeed;
           forecastDays = forecast;
+          forecastHours = newForecastHours; // ✅ Save the new hourly list
           _lastLat = newLat;
           _lastLon = newLon;
           _cityController.text = newCityName;
@@ -357,7 +383,11 @@ class _HomeScreenState extends State<HomeScreen>
       "Nov",
       "Dec",
     ];
-    return months[month - 1];
+    // Add safety check for month index
+    if (month >= 1 && month <= 12) {
+      return months[month - 1];
+    }
+    return "???"; // Return something if month is invalid
   }
 
   @override
@@ -467,7 +497,7 @@ class _HomeScreenState extends State<HomeScreen>
                     if (isLoading)
                       const Center(
                         child: SizedBox(
-                          height: 160,
+                          height: 160, // Adjusted height slightly
                           child: Center(
                             child: CircularProgressIndicator(
                               color: Colors.white,
@@ -481,9 +511,15 @@ class _HomeScreenState extends State<HomeScreen>
                         icon: weatherIcon,
                         description: weatherDescription,
                         date: formattedToday,
+                        humidity: humidity,
+                        windSpeed: windSpeed,
                       ),
-                    const SizedBox(height: 20),
+                    // Use SizedBox consistently for spacing
+                    const SizedBox(height: 25),
 
+                    //
+                    // ▼▼▼ THIS IS THE CORRECTED GREETING & HOURLY SECTION ▼▼▼
+                    //
                     // AI Greeting Widget (or Loading)
                     if (_greetingLoading)
                       Center(
@@ -518,18 +554,116 @@ class _HomeScreenState extends State<HomeScreen>
                             height: 1.4,
                           ),
                         ),
-                      ),
-                    const SizedBox(height: 25),
+                      )
+                    // If greeting isn't loading AND is empty, show nothing
+                    else if (!_greetingLoading && _aiGreeting.isEmpty)
+                      const SizedBox.shrink(), // Takes up zero space
+                    // Consistent space *after* the greeting area (only if it exists or was loading)
+                    if (_greetingLoading || _aiGreeting.isNotEmpty)
+                      const SizedBox(height: 25),
 
-                    // 7-Day Forecast
+                    // Hourly Forecast
+                    if (!isLoading && forecastHours.isNotEmpty) ...[
+                      SizedBox(
+                        height: 110, // Height for the hourly cards
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: forecastHours.length,
+                          itemBuilder: (context, index) {
+                            final hourData = forecastHours[index];
+                            final timeStr = hourData['time'] ?? "";
+                            final temp =
+                                (hourData['temp_c'] as num?)?.round() ?? 0;
+                            final iconUrl =
+                                hourData['condition']?['icon'] ?? "";
+
+                            // Format the time string
+                            String formattedTime = "Now";
+                            DateTime? parsedTime;
+                            try {
+                              parsedTime = DateTime.parse(timeStr);
+                              // Format like "6 PM", "7 PM"
+                              formattedTime = DateFormat(
+                                'h a',
+                              ).format(parsedTime);
+                            } catch (e) {
+                              // keep default
+                            }
+                            // Show "Now" for the current hour, check if parsedTime is not null
+                            bool isNow =
+                                index == 0 &&
+                                parsedTime != null &&
+                                parsedTime.hour == DateTime.now().hour;
+                            if (isNow) {
+                              formattedTime = "Now";
+                            }
+
+                            return Container(
+                              width: 80, // Smaller cards
+                              margin: const EdgeInsets.only(right: 10),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color:
+                                    isNow // Highlight "Now"
+                                    ? Colors.white.withOpacity(0.35)
+                                    : Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                                border: isNow
+                                    ? Border.all(
+                                        color: Colors.white,
+                                        width: 0.5,
+                                      )
+                                    : null,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    formattedTime,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5), // Reduced spacing
+                                  WeatherIconImage(
+                                    iconUrl: iconUrl,
+                                    size: 35.0,
+                                  ),
+                                  const SizedBox(height: 5), // Reduced spacing
+                                  Text(
+                                    "$temp°",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      // Space *after* the hourly forecast
+                      const SizedBox(height: 25),
+                    ], // End of hourly forecast section
+                    //
+                    // ▲▲▲ END OF CORRECTED SECTION ▲▲▲
+                    //
+
+                    // 7-Day Forecast (Starts Tomorrow)
                     if (!isLoading && forecastDays.isNotEmpty) ...[
                       SizedBox(
                         height: 130,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
-                          itemCount: forecastDays.length,
+                          itemCount: forecastDays.length > 0
+                              ? forecastDays.length - 1
+                              : 0,
                           itemBuilder: (context, index) {
-                            final day = forecastDays[index];
+                            final day =
+                                forecastDays[index + 1]; // Start from tomorrow
                             final dateStr = day['date'] ?? "";
                             DateTime parsed =
                                 DateTime.tryParse(dateStr) ?? DateTime.now();
@@ -547,58 +681,60 @@ class _HomeScreenState extends State<HomeScreen>
                                 ? (dayInfo['maxtemp_c'] as num).toInt()
                                 : 0;
 
-                            final bool isToday =
-                                parsed.day == DateTime.now().day &&
-                                    parsed.month == DateTime.now().month &&
-                                    parsed.year == DateTime.now().year;
-
-                            return Container(
-                              width: 110,
-                              margin: const EdgeInsets.only(right: 10),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isToday
-                                    ? Colors.white.withOpacity(0.35)
-                                    : Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
-                                border: isToday
-                                    ? Border.all(
+                            return InkWell(
+                              onTap: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (context) {
+                                    return ForecastDetailSheet(dayData: day);
+                                  },
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                width: 110,
+                                margin: const EdgeInsets.only(right: 10),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      formattedDate,
+                                      style: const TextStyle(
                                         color: Colors.white,
-                                        width: 0.5,
-                                      )
-                                    : null,
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    isToday ? "Today" : formattedDate,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  WeatherIconImage(
-                                    iconUrl: forecastIconUrl,
-                                    size: 40.0,
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    "$minTemp° / $maxTemp°",
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                  Text(
-                                    condition,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 11,
+                                    const SizedBox(height: 5),
+                                    WeatherIconImage(
+                                      iconUrl: forecastIconUrl,
+                                      size: 40.0,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      "$minTemp° / $maxTemp°",
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      condition,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -608,15 +744,13 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 25),
 
                     // AI Chat box
-                    // ✅ We now pass all our weather data into the widget
                     AiAssistantWidget(
                       cityName: cityName,
                       temperature: temperature,
                       weatherDescription: weatherDescription,
                       forecastDays: forecastDays,
-                      isLoading: isLoading, // Pass the loading flag too
+                      isLoading: isLoading,
                     ),
-                    const SizedBox(height: 40),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -660,7 +794,7 @@ class _HomeScreenState extends State<HomeScreen>
         // ✅ --- THIS IS THE UPDATED BUTTON WITH NEW LOGIC ---
         //
         child: FloatingActionButton(
-          backgroundColor: Colors.white,
+          backgroundColor: Colors.white.withOpacity(0.30),
           elevation: 6.0,
           onPressed: () async {
             // 1. Try to get the user's current GPS location
@@ -683,27 +817,22 @@ class _HomeScreenState extends State<HomeScreen>
             } else {
               // 3. FAILED: Open map centered on the last searched city
               print(
-                  "Map Button: Could not get location. Using last city: $cityName");
+                "Map Button: Could not get location. Using last city: $cityName",
+              );
               final lat = _lastLat ?? 14.5995; // Default to Manila
               final lon = _lastLon ?? 120.9842; // Default to Manila
               if (mounted) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => MapScreen(
-                      center: LatLng(lat, lon),
-                      title: cityName,
-                    ),
+                    builder: (_) =>
+                        MapScreen(center: LatLng(lat, lon), title: cityName),
                   ),
                 );
               }
             }
           },
-          child: const Icon(
-            Icons.map,
-            color: Color(0xFF3949AB),
-            size: 24,
-          ),
+          child: const Icon(Icons.map, color: Color(0xFF3949AB), size: 24),
         ),
         //
         // ✅ --- END OF UPDATED BUTTON ---

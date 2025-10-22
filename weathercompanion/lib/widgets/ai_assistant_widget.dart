@@ -4,7 +4,6 @@ import 'package:flutter_gemini/flutter_gemini.dart';
 import 'dart:async';
 
 class AiAssistantWidget extends StatefulWidget {
-  // ✅ ADD: New variables to receive data
   final String cityName;
   final double temperature;
   final String weatherDescription;
@@ -13,7 +12,6 @@ class AiAssistantWidget extends StatefulWidget {
 
   const AiAssistantWidget({
     super.key,
-    // ✅ ADD: Make them required
     required this.cityName,
     required this.temperature,
     required this.weatherDescription,
@@ -31,7 +29,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
   final Gemini _gemini = Gemini.instance;
   final FocusNode _focusNode = FocusNode();
 
-  bool _isChatLoading = false; // Renamed to avoid confusion
+  bool _isChatLoading = false;
   final List<Map<String, String>> _chatHistory = [];
 
   @override
@@ -40,7 +38,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     _chatHistory.add({
       'role': 'model',
       'text':
-          'Hello! I am your AI Assistant. Ask me anything about the weather!',
+          'Hi! I’m Mr. WFC, your friendly Weather Companion. Curious about today’s weather? Need a forecast? Or just want someone to talk to? I’m here for you!', // Updated greeting
     });
     _focusNode.addListener(_onFocusChange);
   }
@@ -58,20 +56,19 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     if (_focusNode.hasFocus) {
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
+          // Use Scrollable.ensureVisible with the widget's context
+          // This requires finding the nearest Scrollable ancestor
           Scrollable.of(context).position.ensureVisible(
-                context.findRenderObject()!,
-                alignment: 0.1,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-              );
+            context.findRenderObject()!, // Use the widget's RenderObject
+            alignment: 0.1, // Align near the top after scrolling
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+          );
         }
       });
     }
   }
 
-  //
-  // ✅ --- THIS IS THE MAIN UPGRADE --- ✅
-  //
   void _sendMessage() {
     if (_chatController.text.isEmpty) return;
 
@@ -86,19 +83,29 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     });
 
     // 1. Check if we have real data from the home screen
-    final bool hasRealData = !widget.isLoading && widget.forecastDays.isNotEmpty;
-    
+    final bool hasRealData =
+        !widget.isLoading && widget.forecastDays.isNotEmpty;
+
     // 2. Build a context-aware prompt
     String contextPrompt;
     if (hasRealData) {
       // Create a clean summary of the forecast
-      final forecastSummary = widget.forecastDays.map((day) {
-        return "Date: ${day['date']}, Min: ${day['day']['mintemp_c']}°C, Max: ${day['day']['maxtemp_c']}°C, Condition: ${day['day']['condition']['text']}";
-      }).join("\n");
+      final forecastSummary = widget.forecastDays
+          .map((day) {
+            final dayData = day['day'] ?? {};
+            final date = day['date'] ?? 'N/A';
+            final minTemp = (dayData['mintemp_c'] as num?)?.round() ?? '?';
+            final maxTemp = (dayData['maxtemp_c'] as num?)?.round() ?? '?';
+            final condition = dayData['condition']?['text'] ?? 'N/A';
+            return "Date: $date, Min: ${minTemp}°C, Max: ${maxTemp}°C, Condition: $condition";
+          })
+          .join("\n");
 
-      contextPrompt = """
-      You are a helpful AI weather assistant. 
-      Use the following **current weather data** to answer my question.
+      contextPrompt =
+          """
+      You are Mr. WFC, a helpful and friendly AI weather assistant represented by a cute cloud character.
+      Use the following **current weather data** to answer my question conversationally and cheerfully.
+      Address me as "Companion" at least once.
 
       CURRENT DATA:
       - Location: ${widget.cityName}
@@ -111,8 +118,8 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     } else {
       // Fallback if data isn't loaded yet
       contextPrompt = """
-      You are a helpful AI assistant. 
-      I don't have my weather data loaded yet, so just answer this general question:
+      You are Mr. WFC, a helpful and friendly AI weather assistant represented by a cute cloud character.
+      My weather data isn't loaded yet, so just answer this general question cheerfully:
       """;
     }
 
@@ -120,42 +127,45 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     final List<Content> chatMessages = [
       // This combines the context and the user's question
       Content(
-        parts: [Part.text("$contextPrompt\n\n$userMessage")], 
-        role: 'user'
-      )
+        parts: [Part.text("$contextPrompt\n\n$userMessage")],
+        role: 'user',
+      ),
     ];
 
     // Send to Gemini
     _gemini
         .chat(
-      chatMessages, // ✅ Pass the new, context-rich messages
-      modelName: 'gemini-pro',
-    )
+          chatMessages, // Pass the new, context-rich messages
+          modelName: 'gemini-pro',
+        )
         .then((response) {
-      final String? modelResponse = response?.output;
-      if (mounted) {
-        setState(() {
-          _isChatLoading = false;
-          _chatHistory.add({
-            'role': 'model',
-            'text':
-                modelResponse ?? "Sorry, I couldn't process that. Try again.",
-          });
-          _scrollToBottom();
+          final String? modelResponse = response?.output;
+          if (mounted) {
+            setState(() {
+              _isChatLoading = false;
+              _chatHistory.add({
+                'role': 'model',
+                'text':
+                    modelResponse ??
+                    "Hmm, my circuits are a bit cloudy right now. Could you ask that again?", // Themed error
+              });
+              _scrollToBottom();
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _isChatLoading = false;
+              _chatHistory.add({
+                'role': 'model',
+                'text':
+                    'Uh oh! A little storm in my system: ${e.toString()}', // Themed error
+              });
+              _scrollToBottom();
+            });
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _isChatLoading = false;
-          _chatHistory.add({
-            'role': 'model',
-            'text': 'Error: ${e.toString()}',
-          });
-          _scrollToBottom();
-        });
-      }
-    });
   }
 
   void _scrollToBottom() {
@@ -178,6 +188,9 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+        ), // Added subtle border
       ),
       child: Column(
         children: [
@@ -189,37 +202,92 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
               itemBuilder: (context, index) {
                 final message = _chatHistory[index];
                 final bool isUser = message['role'] == 'user';
-                return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? const Color(0xFF7986CB)
-                          : Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Text(
-                      message['text']!,
-                      style: TextStyle(
-                        color: isUser ? Colors.white : Colors.black87,
+
+                //
+                // ✅ --- THIS IS THE VISUAL CHANGE --- ✅
+                //
+                if (isUser) {
+                  // User message aligns right
+                  return Align(
+                    alignment: Alignment.centerRight,
+                    child: Container(
+                      margin: const EdgeInsets.only(
+                        top: 4,
+                        bottom: 4,
+                        left: 60,
+                      ), // Margin to prevent overlap
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7986CB), // User bubble color
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Text(
+                        message['text']!,
+                        style: const TextStyle(color: Colors.white),
                       ),
                     ),
-                  ),
-                );
+                  );
+                } else {
+                  // AI message aligns left, includes mascot
+                  return Padding(
+                    padding: const EdgeInsets.only(
+                      top: 4,
+                      bottom: 4,
+                      right: 40,
+                    ), // Margin to prevent overlap
+                    child: Row(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start, // Align mascot to top
+                      children: [
+                        // The Mascot Image
+                        CircleAvatar(
+                          backgroundImage: const AssetImage(
+                            'assets/images/logo.png',
+                          ),
+                          radius: 18, // Adjust size as needed
+                          backgroundColor: Colors
+                              .transparent, // Avoid white background if PNG has transparency
+                        ),
+                        const SizedBox(
+                          width: 8,
+                        ), // Space between mascot and bubble
+                        // The Chat Bubble (use Flexible for wrapping)
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(
+                                0.9,
+                              ), // AI bubble color
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: Text(
+                              message['text']!,
+                              style: const TextStyle(color: Colors.black87),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                //
+                // ✅ --- END OF VISUAL CHANGE --- ✅
+                //
               },
             ),
           ),
-          if (_isChatLoading) // Use the renamed variable
+
+          if (_isChatLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
               child: LinearProgressIndicator(
                 color: Colors.white,
                 backgroundColor: Colors.transparent,
+                minHeight: 2, // Make it subtle
               ),
             ),
+
           // Input row
           Padding(
             padding: const EdgeInsets.only(top: 8.0),
@@ -231,7 +299,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                     controller: _chatController,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: "Ask me about the weather...", // Updated hint
+                      hintText: "Ask Mr. WFC...", // Updated hint
                       hintStyle: const TextStyle(color: Colors.white70),
                       filled: true,
                       fillColor: Colors.white.withOpacity(0.2),
@@ -239,8 +307,11 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 15),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 10,
+                      ), // Adjust padding
+                      isDense: true,
                     ),
                     onSubmitted: (value) => _sendMessage(),
                   ),
@@ -249,6 +320,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                 IconButton(
                   icon: const Icon(Icons.send, color: Colors.white),
                   onPressed: _sendMessage,
+                  tooltip: 'Send message', // Accessibility
                 ),
               ],
             ),

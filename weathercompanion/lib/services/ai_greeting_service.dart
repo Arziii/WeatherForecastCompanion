@@ -19,15 +19,18 @@ class AiGreetingService {
     final DateTime localTime = currentTime.toLocal();
 
     // 2. Format the local time AND include the timezone abbreviation (zzzz)
-    final String formattedTime =
-        DateFormat('h:mm a (zzzz)').format(localTime); // e.g., "11:23 PM (PHT)"
-    final String dayOfWeek =
-        DateFormat('EEEE').format(localTime); // e.g., "Tuesday"
+    final String formattedTime = DateFormat(
+      'h:mm a (zzzz)',
+    ).format(localTime); // e.g., "11:23 PM (PHT)"
+    final String dayOfWeek = DateFormat(
+      'EEEE',
+    ).format(localTime); // e.g., "Tuesday"
     //
     // ✅ --- END OF FIX ---
     //
 
-    final String fullPrompt = """
+    final String fullPrompt =
+        """
     You are WeatherCompanion, a friendly AI buddy.
 
     **CRITICAL TASK:** Generate a 2-3 sentence, conversational greeting for your friend in $city.
@@ -60,17 +63,14 @@ class AiGreetingService {
 
     if (kDebugMode) {
       // ✅ Added a new debug print so you can see the raw object
-      print("Raw DateTime object received: $currentTime"); 
+      print("Raw DateTime object received: $currentTime");
       print("Sending full AI prompt: $fullPrompt");
     }
 
     try {
-      final response = await _gemini.chat(
-        [
-          Content(parts: [Part.text(fullPrompt)], role: 'user'),
-        ],
-        modelName: 'gemini-1.5-flash-latest',
-      );
+      final response = await _gemini.chat([
+        Content(parts: [Part.text(fullPrompt)], role: 'user'),
+      ], modelName: 'gemini-1.5-flash-latest');
 
       String? greeting = response?.output;
 

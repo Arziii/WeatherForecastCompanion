@@ -6,6 +6,9 @@ class WeatherCard extends StatelessWidget {
   final String icon;
   final String description;
   final String date;
+  // ✅ ADD: New required parameters
+  final int humidity;
+  final double windSpeed;
 
   const WeatherCard({
     super.key,
@@ -13,13 +16,15 @@ class WeatherCard extends StatelessWidget {
     required this.icon,
     required this.description,
     required this.date,
+    // ✅ ADD: Make them required in the constructor
+    required this.humidity,
+    required this.windSpeed,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      // UPDATED: Reduced padding from 20 to 15
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
@@ -44,34 +49,78 @@ class WeatherCard extends StatelessWidget {
             date,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 12, // UPDATED: Reduced font size from 14
+              fontSize: 12,
             ),
           ),
-          // UPDATED: Reduced spacing from 10 to 8
           const SizedBox(height: 8),
 
-          // UPDATED: Reduced icon size from 70.0 to 60.0
+          // Icon
           WeatherIconImage(iconUrl: icon, size: 60.0),
-          // UPDATED: Reduced spacing from 8 to 5
           const SizedBox(height: 5),
+
+          // Temperature
           Text(
-            "${temperature.toStringAsFixed(1)}°C",
+            "${temperature.toStringAsFixed(1)}°C", // Using your formatting
             style: const TextStyle(
-              fontSize: 34, // UPDATED: Reduced font size from 38
+              fontSize: 34,
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
           ),
-          // UPDATED: Reduced spacing from 8 to 5
           const SizedBox(height: 5),
+
+          // Description
           Text(
             description,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 14, // UPDATED: Reduced font size from 16
+              fontSize: 14,
             ),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 15), // Space before the new details
+
+          // ✅ --- ADDED: Humidity and Wind Speed Row ---
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center, // Center the items
+            children: [
+              // Humidity Item
+              Row(
+                mainAxisSize: MainAxisSize.min, // Keep items close together
+                children: [
+                  Icon(Icons.water_drop_outlined, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    "$humidity%",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 20), // Space between humidity and wind
+
+              // Wind Speed Item
+              Row(
+                mainAxisSize: MainAxisSize.min, // Keep items close together
+                children: [
+                  Icon(Icons.air, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    "${windSpeed.round()} kph",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // ✅ --- END OF NEW ROW ---
         ],
       ),
     );
