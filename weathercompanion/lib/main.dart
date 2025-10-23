@@ -13,6 +13,7 @@ const String geminikey = "AIzaSyDRXmCeqy9QuFihb28GqVN_z3JNRX95Dms";
 //
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   // ADD THIS
   Gemini.init(
     apiKey: geminikey,

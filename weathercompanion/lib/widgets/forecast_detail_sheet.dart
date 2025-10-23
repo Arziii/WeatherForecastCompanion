@@ -1,21 +1,20 @@
 // lib/widgets/forecast_detail_sheet.dart
+
 import 'package:flutter/material.dart';
-import 'package:flutter_gemini/flutter_gemini.dart';
-import 'package:weathercompanion/widgets/weather_icon_image.dart';
+import 'package:flutter_gemini/flutter_gemini.dart'; // ✅ THE FIX IS THIS IMPORT
 import 'package:intl/intl.dart';
-// ✅ Import Settings Service and Enums
 import 'package:weathercompanion/services/settings_service.dart';
+import 'package:weathercompanion/widgets/weather_icon_image.dart';
+import 'dart:developer' as developer;
 
 class ForecastDetailSheet extends StatefulWidget {
   final Map<String, dynamic> dayData;
-  // ✅ ADD Current unit settings
   final TemperatureUnit tempUnit;
   final WindSpeedUnit windUnit;
 
   const ForecastDetailSheet({
     super.key,
     required this.dayData,
-    // ✅ Make them required
     required this.tempUnit,
     required this.windUnit,
   });
@@ -25,61 +24,68 @@ class ForecastDetailSheet extends StatefulWidget {
 }
 
 class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
-  final Gemini _gemini = Gemini.instance;
-  // ✅ Need SettingsService instance for conversions
-  final SettingsService _settingsService = SettingsService();
-  String _aiAdvice = "";
-  bool _isLoading = true;
+  String _aiTip = "";
+  bool _isLoadingTip = true;
+  final SettingsService _settingsService = SettingsService(); // For conversions
 
   @override
   void initState() {
     super.initState();
-    _generateAiAdvice();
+    _fetchAiTip();
   }
 
-  Future<void> _generateAiAdvice() async {
+  String _buildAiPrompt() {
     final day = widget.dayData['day'] ?? {};
-    final condition = day['condition']?['text'] ?? "clear";
-    // Get temps in Celsius first
-    final int minTempC = (widget.dayData['day']?['mintemp_c'] as num?)?.round() ?? 0;
-    final int maxTempC = (widget.dayData['day']?['maxtemp_c'] as num?)?.round() ?? 0;
-    final date = widget.dayData['date'] ?? "this day";
+    final astro = widget.dayData['astro'] ?? {};
+    final date = widget.dayData['date'] ?? 'this day';
 
-    // ✅ Convert temps for the AI prompt based on settings
-    final String tempPrompt = widget.tempUnit == TemperatureUnit.celsius
-        ? "High: ${maxTempC}°C, Low: ${minTempC}°C"
-        : "High: ${_settingsService.toFahrenheit(maxTempC.toDouble()).round()}°F, Low: ${_settingsService.toFahrenheit(minTempC.toDouble()).round()}°F";
+    final condition = day['condition']?['text'] ?? 'varied';
+    final maxTempC = (day['maxtemp_c'] as num?)?.round() ?? 0;
+    final minTempC = (day['mintemp_c'] as num?)?.round() ?? 0;
+    final precip = (day['totalprecip_mm'] as num?)?.toDouble() ?? 0.0;
+    final snow = (day['totalsnow_cm'] as num?)?.toDouble() ?? 0.0;
+    final uv = (day['uv'] as num?)?.toDouble() ?? 0;
+    final sunrise = astro['sunrise'] ?? 'N/A';
+    final sunset = astro['sunset'] ?? 'N/A';
 
-
-    final String prompt = """
-    You are a friendly and helpful weather assistant.
-    Your friend is looking at the forecast for $date.
-
-    The forecast is:
+    return """
+    You are a friendly weather companion.
+    Based on this forecast for $date:
     - Condition: $condition
-    - $tempPrompt
+    - Max Temp: $maxTempC°C
+    - Min Temp: $minTempC°C
+    - Precipitation: ${precip}mm
+    - Snow: ${snow}cm
+    - UV Index: $uv
+    - Sunrise: $sunrise
+    - Sunset: $sunset
 
-    Give them a short, helpful, and friendly tip (2-3 sentences) based on this forecast.
-    Focus on what to wear, what to expect, or a good activity.
+    Provide a 2-3 sentence, conversational tip or piece of advice for the day. Be friendly and helpful.
     """;
+  }
 
+  void _fetchAiTip() async {
+    if (!mounted) return;
+    setState(() => _isLoadingTip = true);
+
+    final prompt = _buildAiPrompt();
     try {
-      final response = await _gemini.chat(
+      final response = await Gemini.instance.chat(
         [Content(parts: [Part.text(prompt)], role: 'user')],
-        modelName: 'gemini-1.5-flash-latest',
       );
-
       if (mounted) {
         setState(() {
-          _aiAdvice = response?.output ?? "Could not get AI advice.";
-          _isLoading = false;
+          _aiTip =
+              response?.output ?? "Couldn't generate a tip for this day.";
+          _isLoadingTip = false;
         });
       }
     } catch (e) {
+      developer.log('AI Tip Error: $e', name: 'ForecastDetailSheet');
       if (mounted) {
         setState(() {
-          _aiAdvice = "An error occurred while getting AI advice.";
-          _isLoading = false;
+          _aiTip = "Sorry, couldn't fetch a tip right now.";
+          _isLoadingTip = false;
         });
       }
     }
@@ -87,144 +93,224 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // Extract data
-    final dayInfo = widget.dayData['day'] ?? {};
-    final String dateStr = widget.dayData['date'] ?? "";
-    final List<dynamic> hourlyData = widget.dayData['hour'] as List? ?? [];
+    final day = widget.dayData['day'] ?? {};
+    final astro = widget.dayData['astro'] ?? {};
+    final hourly = (widget.dayData['hour'] as List?) ?? [];
 
-    String formattedDate = "Forecast";
-    try {
-      final parsedDate = DateTime.parse(dateStr);
-      formattedDate = "Forecast for ${DateFormat('EEEE, MMM d').format(parsedDate)}";
-    } catch (e) { /* fallback */ }
+    // Conversions based on passed-in settings
+    final isCelsius = widget.tempUnit == TemperatureUnit.celsius;
+    final isKph = widget.windUnit == WindSpeedUnit.kph;
 
-    final String condition = dayInfo['condition']?['text'] ?? "N/A";
-    final String iconUrl = dayInfo['condition']?['icon'] ?? "";
-    // Get standard units
-    final int minTempC = (dayInfo['mintemp_c'] as num?)?.toInt() ?? 0;
-    final int maxTempC = (dayInfo['maxtemp_c'] as num?)?.toInt() ?? 0;
-    final int humidity = (dayInfo['avghumidity'] as num?)?.toInt() ?? 0;
-    final double windKph = (dayInfo['maxwind_kph'] as num?)?.toDouble() ?? 0;
-
-    // ✅ Convert for display
-    final String displayMaxTemp = widget.tempUnit == TemperatureUnit.celsius
-       ? "$maxTempC" : "${_settingsService.toFahrenheit(maxTempC.toDouble()).round()}";
-    final String displayMinTemp = widget.tempUnit == TemperatureUnit.celsius
-       ? "$minTempC" : "${_settingsService.toFahrenheit(minTempC.toDouble()).round()}";
-    final String tempSymbol = widget.tempUnit == TemperatureUnit.celsius ? "°" : "°";
-
-    final String displayWind = widget.windUnit == WindSpeedUnit.kph
-       ? "${windKph.round()}" : "${_settingsService.toMph(windKph).round()}";
-    final String windSymbol = widget.windUnit == WindSpeedUnit.kph ? "kph" : "mph";
-
+    final String maxTemp = isCelsius
+        ? "${(day['maxtemp_c'] as num?)?.round() ?? 0}°"
+        : "${_settingsService.toFahrenheit((day['maxtemp_c'] as num?)?.toDouble() ?? 0).round()}°";
+    final String minTemp = isCelsius
+        ? "${(day['mintemp_c'] as num?)?.round() ?? 0}°"
+        : "${_settingsService.toFahrenheit((day['mintemp_c'] as num?)?.toDouble() ?? 0).round()}°";
+    final String windSpeed = isKph
+        ? "${(day['maxwind_kph'] as num?)?.round() ?? 0} kph"
+        : "${_settingsService.toMph((day['maxwind_kph'] as num?)?.toDouble() ?? 0).round()} mph";
 
     return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
       decoration: const BoxDecoration(
-        color: Color(0xFF3949AB),
-        borderRadius: BorderRadius.only( topLeft: Radius.circular(20), topRight: Radius.circular(20), ),
+        color: Color(0xFF3949AB), // Dark blue background
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
       ),
-      padding: const EdgeInsets.all(24.0),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Handlebar
+          Container(
+            width: 40,
+            height: 5,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
           // Header
-          Center( child: Text( formattedDate, style: const TextStyle( color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, ), ), ),
-          const SizedBox(height: 20),
-          // Main Info
-          Row( mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              WeatherIconImage(iconUrl: iconUrl, size: 70),
-              Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text( "$displayMaxTemp$tempSymbol / $displayMinTemp$tempSymbol", style: const TextStyle( color: Colors.white, fontSize: 32, fontWeight: FontWeight.w600, ), ),
-                  Text( condition, style: const TextStyle( color: Colors.white70, fontSize: 18, ), ),
-                ],
-              )
-            ],
-          ),
-          const SizedBox(height: 15),
-          Divider(color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 15),
-          // Extra Details
-          Row( mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              _DetailItem( icon: Icons.water_drop_outlined, label: "Humidity", value: "$humidity%", ),
-              _DetailItem( icon: Icons.air, label: "Wind", value: "$displayWind $windSymbol", ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          Divider(color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 20),
-          // Hourly Forecast Section
-          const Text( "Hourly Details", style: TextStyle( color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600, ), ),
-          const SizedBox(height: 10),
-          if (hourlyData.isEmpty)
-             const Text( "Hourly data not available.", style: TextStyle(color: Colors.white70, fontStyle: FontStyle.italic), )
-          else
-            SizedBox( height: 100,
-              child: ListView.builder( scrollDirection: Axis.horizontal, itemCount: hourlyData.length,
-                itemBuilder: (context, index) {
-                  final hour = hourlyData[index];
-                  final timeStr = hour['time'] ?? "";
-                  // Get Celsius Temp
-                  final double tempC = (hour['temp_c'] as num?)?.toDouble() ?? 0.0;
-                  final hourIconUrl = hour['condition']?['icon'] ?? "";
-
-                  // ✅ Convert Hour Temp
-                   final String displayHourTemp = widget.tempUnit == TemperatureUnit.celsius
-                        ? "${tempC.round()}" : "${_settingsService.toFahrenheit(tempC).round()}";
-
-                  String formattedHour = "";
-                  try { final parsedTime = DateTime.parse(timeStr); formattedHour = DateFormat('h a').format(parsedTime); } catch (e) { /* Ignore */ }
-
-                  return Container( width: 70, margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                    decoration: BoxDecoration( color: Colors.black.withOpacity(0.1), borderRadius: BorderRadius.circular(10), ),
-                    child: Column( mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                        Text( formattedHour, style: const TextStyle( color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500, ), ),
-                        WeatherIconImage(iconUrl: hourIconUrl, size: 30),
-                        Text( "$displayHourTemp$tempSymbol", style: const TextStyle( color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600, ), ),
-                      ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Column(
+              children: [
+                Text(
+                  DateFormat.yMMMEd()
+                      .format(DateTime.parse(widget.dayData['date'] ?? '')),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    WeatherIconImage(
+                        iconUrl: day['condition']?['icon'] ?? '', size: 50),
+                    const SizedBox(width: 15),
+                    Text(
+                      '$maxTemp / $minTemp',
+                      style: const TextStyle(color: Colors.white, fontSize: 24),
                     ),
-                  );
-                },
-              ),
+                  ],
+                ),
+                Text(
+                  day['condition']?['text'] ?? '',
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+              ],
             ),
-          const SizedBox(height: 20),
-          Divider(color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 20),
-          // AI Advice Section
-          const Text( "Companion's Advice", style: TextStyle( color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600, ), ),
+          ),
+          const Divider(color: Colors.white24, height: 20, indent: 20, endIndent: 20),
+
+          // Main Details Grid
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildDetailItem(Icons.wind_power, "Wind", windSpeed),
+                _buildDetailItem(Icons.water_drop, "Precip.",
+                    "${(day['totalprecip_mm'] as num?)?.toStringAsFixed(1) ?? 0} mm"),
+                _buildDetailItem(Icons.wb_sunny, "UV Index",
+                    (day['uv'] as num?)?.toString() ?? 'N/A'),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
-          if (_isLoading) const Center(child: CircularProgressIndicator(color: Colors.white))
-          else Container( width: double.infinity, padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration( color: Colors.black.withOpacity(0.1), borderRadius: BorderRadius.circular(10), ),
-              child: Text( _aiAdvice, style: const TextStyle( color: Colors.white, fontSize: 15, fontStyle: FontStyle.italic, height: 1.4, ), ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                 _buildDetailItem(Icons.sunrise, "Sunrise", astro['sunrise'] ?? 'N/A'),
+                 _buildDetailItem(Icons.sunset, "Sunset", astro['sunset'] ?? 'N/A'),
+                 _buildDetailItem(Icons.arrow_downward, "Min", minTemp), // Example
+              ],
             ),
-          const SizedBox(height: 20), // Bottom padding
+          ),
+          const Divider(color: Colors.white24, height: 20, indent: 20, endIndent: 20),
+
+          // AI Tip
+          _buildAiTipWidget(),
+          const Divider(color: Colors.white24, height: 20, indent: 20, endIndent: 20),
+
+          // Hourly List Title
+          const Text("Hourly Forecast",
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+
+          // Hourly List
+          Expanded(
+            child: ListView.builder(
+              itemCount: hourly.length,
+              itemBuilder: (context, index) {
+                final hour = hourly[index];
+                final String time =
+                    DateFormat.j().format(DateTime.parse(hour['time'] ?? ''));
+                final String temp = isCelsius
+                    ? "${(hour['temp_c'] as num?)?.round() ?? 0}°"
+                    : "${_settingsService.toFahrenheit((hour['temp_c'] as num?)?.toDouble() ?? 0).round()}°";
+                final String precipChance =
+                    "${(hour['chance_of_rain'] as num?)?.round() ?? 0}%";
+
+                return ListTile(
+                  leading: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(time,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  title: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      WeatherIconImage(
+                          iconUrl: hour['condition']?['icon'] ?? '', size: 30),
+                      const SizedBox(width: 10),
+                      Text(hour['condition']?['text'] ?? '',
+                          style: const TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                  trailing: Column(
+                     mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(temp,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold)),
+                       Text(precipChance, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
   }
-}
 
-// Detail Item Helper Widget
-class _DetailItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
+  Widget _buildAiTipWidget() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Image.asset('assets/images/logo.png', width: 30, height: 30),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Mr. WFC's Tip",
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 5),
+                _isLoadingTip
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.0),
+                      )
+                    : Text(
+                        _aiTip,
+                        style: const TextStyle(
+                            color: Colors.white70, fontStyle: FontStyle.italic),
+                      ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-  // Use const constructor
-  const _DetailItem({ required this.icon, required this.label, required this.value, });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, color: Colors.white70, size: 28),
-        const SizedBox(height: 4),
-        Text( value, style: const TextStyle( color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600, ), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,),
-        Text( label, style: const TextStyle( color: Colors.white70, fontSize: 14, ), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,),
-      ],
+  Widget _buildDetailItem(IconData icon, String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white70, size: 20),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(height: 2),
+          Text(value,
+              style:
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }

@@ -22,6 +22,7 @@ class MapScreen extends StatelessWidget {
           TileLayer(
             // UPDATED: Removed the {s} subdomain part
             urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            userAgentPackageName: 'com.example.weathercompanion',
             // REMOVED: The subdomains property
           ),
           MarkerLayer(
