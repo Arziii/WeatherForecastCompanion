@@ -1,11 +1,13 @@
 // lib/services/ai_greeting_service.dart
 
 import 'dart:developer' as developer;
-import 'package:flutter_gemini/flutter_gemini.dart'; // ✅ THE FIX IS THIS IMPORT
+import 'package:flutter_gemini/flutter_gemini.dart';
 import 'package:intl/intl.dart';
 
 class AiGreetingService {
   final Gemini _gemini = Gemini.instance;
+  // ✅ Using gemini-pro, compatible with v1beta used by flutter_gemini 2.0.5
+  final String _modelName = 'gemini-pro';
 
   String _getHourGreeting(DateTime time) {
     final hour = time.hour;
@@ -34,7 +36,7 @@ class AiGreetingService {
     - Temperature: ${temp.round()}°C
     - Weather: $weather
     - Current Time: $formattedTime ($timeOfDay) on $dayOfWeek
-    
+
     **RULES (You MUST follow these):**
     1.  **Your greeting MUST be 100% appropriate for the time ($formattedTime ($timeOfDay)).** For example, if the time is "11:23 PM (PHT)", you MUST say "Good evening" or "Getting late." You MUST NOT say "Good afternoon."
     2.  Casually mention the city ($city) AND the weather ($weather or ${temp.round()}°C).
@@ -52,12 +54,15 @@ class AiGreetingService {
   Future<String> generateGreeting(String weather, String city, double temp, DateTime localTime) async {
     final fullPrompt = _buildPrompt(weather, city, temp, localTime);
     try {
-      final response = await _gemini.chat(
-        [Content(parts: [Part.text(fullPrompt)], role: 'user')],
-        chatHistory: [], // Ensure no previous context interferes
+      // ✅ FIX: Switched from gemini.chat() to gemini.text()
+      final response = await _gemini.text(
+        fullPrompt,
+        modelName: _modelName,
       );
 
+      // ✅ FIX: Access output differently for .text() (using .output is simpler here)
       final greeting = response?.output ?? "Hello! Have a great day.";
+
       developer.log("AI Greeting received: $greeting");
       return greeting;
     } catch (e) {

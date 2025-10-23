@@ -1,3 +1,5 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
 //
@@ -17,6 +19,7 @@ void main() {
   // ADD THIS
   Gemini.init(
     apiKey: geminikey,
+    // ✅ FIX: Removed the model/modelName parameter. It's not in v2.0.5
     enableDebugging: true, // We can turn this off later
   );
 

@@ -1,7 +1,7 @@
 // lib/widgets/ai_assistant_widget.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemini/flutter_gemini.dart'; // ✅ THE FIX IS THIS IMPORT
+import 'package:flutter_gemini/flutter_gemini.dart';
 import 'dart:developer' as developer;
 
 class AiAssistantWidget extends StatefulWidget {
@@ -30,6 +30,8 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
   final gemini = Gemini.instance;
   final List<Map<String, dynamic>> _chatHistory = [];
   bool _isAILoading = false;
+  // ✅ Using gemini-pro, compatible with v1beta used by flutter_gemini 2.0.5
+  final String _modelName = 'gemini-pro';
 
   @override
   void initState() {
@@ -91,13 +93,18 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     _scrollToBottom();
 
     final contextPrompt = _generateContextPrompt();
+    final fullPrompt = "$contextPrompt\n\nUser Question: $userMessage"; // Combine prompt
 
     try {
-      final response = await gemini.chat(
-        [Content(parts: [Part.text("$contextPrompt\n\nUser Question: $userMessage")], role: 'user')],
+       // ✅ FIX: Switched from gemini.chat() to gemini.text()
+      final response = await gemini.text(
+        fullPrompt,
+        modelName: _modelName,
       );
 
+      // ✅ FIX: Access output differently for .text() (using .output is simpler here)
       final aiResponse = response?.output ?? "Sorry, I couldn't understand that.";
+
 
       setState(() {
         _chatHistory.add({'isUser': false, 'message': aiResponse});

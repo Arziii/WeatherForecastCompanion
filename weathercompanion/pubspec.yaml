@@ -16,7 +16,7 @@ dependencies:
   flutter_map: ^6.1.0
   geolocator: ^11.0.0
   permission_handler: ^11.3.1
-  flutter_gemini: ^2.0.4
+  flutter_gemini: ^3.0.0
   shared_preferences: ^2.2.3
   # nominatim_geocoding: ^0.0.6  <-- DELETE THIS LINE
   latlong2: ^0.9.1

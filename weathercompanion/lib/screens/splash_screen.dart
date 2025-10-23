@@ -1,6 +1,8 @@
+// lib/screens/splash_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:weathercompanion/screens/home_screen.dart';
-import 'dart:async'; // Import for Timer
+import 'dart:async';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -9,74 +11,85 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-  Timer? _timer; // Hold a reference to the timer
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 2), // Animation duration
-      vsync: this,
-    );
-
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-
-    _controller.forward(); // Start the animation
-
-    // Navigate after 3 seconds (faster than 4)
-    _timer = Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        // Check if the widget is still in the tree
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const HomeScreen(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
-            transitionDuration: const Duration(seconds: 1), // Fade duration
-          ),
-        );
-      }
+    Timer(const Duration(seconds: 3), () {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
     });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel(); // Cancel the timer if the widget is disposed
-    _controller.dispose(); // Dispose the animation controller
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF3F51B5), // Nice indigo background
-      body: Center(
-        child: FadeTransition(
-          opacity: _animation,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF6A82FB), // Lighter blue
+              Color(0xFF3F51B5), // Indigo
+            ],
+          ),
+        ),
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/images/logo.png', // Make sure this path is correct
-                width: 120,
-                height: 120,
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'WeatherCompanion',
+            children: <Widget>[
+              // *** Header Section Start ***
+              Image.asset('assets/images/logo.png',
+                  width: 110, height: 110), // Slightly larger logo
+              const SizedBox(height: 25),
+              // Main Title Style
+              Text(
+                'Weather Companion',
+                textAlign: TextAlign.center, // Ensure center alignment
                 style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 34, // Increased size
+                  fontWeight: FontWeight.bold, // Keep bold
                   color: Colors.white,
-                  letterSpacing: 1.2,
+                  // ✅ Add a subtle shadow for depth
+                  shadows: [
+                    Shadow(
+                      blurRadius: 10.0,
+                      color: Colors.black.withOpacity(0.3),
+                      offset: const Offset(2.0, 2.0),
+                    ),
+                  ],
+                  letterSpacing: 1.2, // Add slight letter spacing
                 ),
+              ),
+              const SizedBox(height: 10),
+              // Subtitle Style
+              Text(
+                'Weather Forecast with AI Integration',
+                textAlign: TextAlign.left, // Ensure center alignment
+                style: TextStyle(
+                  fontSize: 12, // Slightly larger subtitle
+                  color: Colors.white
+                      .withOpacity(0.85), // Make it slightly brighter
+                  fontStyle: FontStyle.italic,
+                  letterSpacing: 0.8, // Add subtle letter spacing
+                  // You could add a lighter shadow if desired
+                  // shadows: [
+                  //   Shadow(
+                  //     blurRadius: 5.0,
+                  //     color: Colors.black.withOpacity(0.2),
+                  //     offset: Offset(1.0, 1.0),
+                  //   ),
+                  // ],
+                ),
+              ),
+              // *** Header Section End ***
+
+              const SizedBox(height: 50), // Increased space before indicator
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                strokeWidth: 3.0, // Slightly thinner indicator
               ),
             ],
           ),

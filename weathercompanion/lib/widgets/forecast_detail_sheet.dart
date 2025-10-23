@@ -1,7 +1,7 @@
 // lib/widgets/forecast_detail_sheet.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemini/flutter_gemini.dart'; // ✅ THE FIX IS THIS IMPORT
+import 'package:flutter_gemini/flutter_gemini.dart';
 import 'package:intl/intl.dart';
 import 'package:weathercompanion/services/settings_service.dart';
 import 'package:weathercompanion/widgets/weather_icon_image.dart';
@@ -27,6 +27,8 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
   String _aiTip = "";
   bool _isLoadingTip = true;
   final SettingsService _settingsService = SettingsService(); // For conversions
+  // ✅ Using gemini-pro, compatible with v1beta used by flutter_gemini 2.0.5
+  final String _modelName = 'gemini-pro';
 
   @override
   void initState() {
@@ -70,13 +72,15 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
 
     final prompt = _buildAiPrompt();
     try {
-      final response = await Gemini.instance.chat(
-        [Content(parts: [Part.text(prompt)], role: 'user')],
+      // ✅ FIX: Switched from Gemini.instance.chat() to Gemini.instance.text()
+      final response = await Gemini.instance.text(
+        prompt,
+        modelName: _modelName,
       );
       if (mounted) {
         setState(() {
-          _aiTip =
-              response?.output ?? "Couldn't generate a tip for this day.";
+           // ✅ FIX: Access output differently for .text() (using .output is simpler here)
+          _aiTip = response?.output ?? "Couldn't generate a tip for this day.";
           _isLoadingTip = false;
         });
       }
@@ -176,7 +180,7 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
                 _buildDetailItem(Icons.wind_power, "Wind", windSpeed),
                 _buildDetailItem(Icons.water_drop, "Precip.",
                     "${(day['totalprecip_mm'] as num?)?.toStringAsFixed(1) ?? 0} mm"),
-                _buildDetailItem(Icons.wb_sunny, "UV Index",
+                _buildDetailItem(Icons.wb_sunny_outlined, "UV Index",
                     (day['uv'] as num?)?.toString() ?? 'N/A'),
               ],
             ),
@@ -187,9 +191,12 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                 _buildDetailItem(Icons.sunrise, "Sunrise", astro['sunrise'] ?? 'N/A'),
-                 _buildDetailItem(Icons.sunset, "Sunset", astro['sunset'] ?? 'N/A'),
-                 _buildDetailItem(Icons.arrow_downward, "Min", minTemp), // Example
+                 _buildDetailItem(Icons.wb_twilight_outlined, "Sunrise", astro['sunrise'] ?? 'N/A'),
+                 _buildDetailItem(Icons.wb_twilight_outlined, "Sunset", astro['sunset'] ?? 'N/A'),
+                 _buildDetailItem(Icons.thermostat, "Avg Temp",
+                      isCelsius
+                          ? "${(day['avgtemp_c'] as num?)?.round() ?? 0}°"
+                          : "${_settingsService.toFahrenheit((day['avgtemp_c'] as num?)?.toDouble() ?? 0).round()}°"),
               ],
             ),
           ),
@@ -301,14 +308,20 @@ class _ForecastDetailSheetState extends State<ForecastDetailSheet> {
   Widget _buildDetailItem(IconData icon, String label, String value) {
     return Expanded(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, color: Colors.white70, size: 20),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12), textAlign: TextAlign.center),
           const SizedBox(height: 2),
-          Text(value,
-              style:
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );

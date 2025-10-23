@@ -199,13 +199,15 @@ class _HomeScreenState extends State<HomeScreen>
           developer.log(
               '[HomeScreen] No override/saved/controller text. Getting current location...',
               name: 'HomeScreen');
-          
+
           final locationDetails = await _determineCurrentLocationQuery();
-          
+
           // ✅ --- FIX IS HERE --- ✅
           // Provide default values in case keys are missing
-          locationQuery = locationDetails['query'] ?? "14.4081,121.0415"; // Default to Parañaque coords
-          locationNameToUse = locationDetails['name'] ?? "Parañaque"; // Default to Parañaque name
+          locationQuery = locationDetails['query'] ??
+              "14.474686,121.001959"; // Default to Parañaque coords
+          locationNameToUse = locationDetails['name'] ??
+              "Parañaque"; // Default to Parañaque name
           // -------------------------
         }
       }
@@ -315,12 +317,13 @@ class _HomeScreenState extends State<HomeScreen>
 
         final response = await http.get(url, headers: {
           'User-Agent': 'WeatherCompanionApp/1.7.1 (johnbalmedina30@gmail.com)'
-        }); 
+        });
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           final address = data['address'];
-          developer.log('[HomeScreen] Nominatim Response: $data', name: 'HomeScreen');
+          developer.log('[HomeScreen] Nominatim Response: $data',
+              name: 'HomeScreen');
 
           String foundName = address['neighbourhood'] ??
               address['suburb'] ??
@@ -329,7 +332,8 @@ class _HomeScreenState extends State<HomeScreen>
               address['city'] ??
               "Current Location";
 
-          developer.log('[HomeScreen] Nominatim success. Using name: $foundName',
+          developer.log(
+              '[HomeScreen] Nominatim success. Using name: $foundName',
               name: 'HomeScreen');
 
           return {
@@ -346,8 +350,10 @@ class _HomeScreenState extends State<HomeScreen>
           };
         }
       } catch (e) {
-        developer.log('[HomeScreen] Nominatim HTTP error: $e. Using coordinate query.',
-            name: 'HomeScreen', error: e);
+        developer.log(
+            '[HomeScreen] Nominatim HTTP error: $e. Using coordinate query.',
+            name: 'HomeScreen',
+            error: e);
         return {
           'name': 'Current Location',
           'query': "${position.latitude},${position.longitude}"
@@ -364,10 +370,7 @@ class _HomeScreenState extends State<HomeScreen>
           name: 'HomeScreen',
           error: e);
       _showErrorSnackbar(e.toString().replaceFirst("Exception: ", ""));
-      return {
-        'name': "Paranaque",
-        'query': "Paranaque"
-      }; // Default fallback
+      return {'name': "Paranaque", 'query': "Paranaque"}; // Default fallback
     }
   }
 
@@ -384,10 +387,10 @@ class _HomeScreenState extends State<HomeScreen>
     final todayAstro = todayForecast?['astro'] ?? {};
     final todayDay = todayForecast?['day'] ?? {};
 
-    final List<dynamic> allHours = (todayForecast != null &&
-            todayForecast['hour'] != null)
-        ? (todayForecast['hour'] as List)
-        : [];
+    final List<dynamic> allHours =
+        (todayForecast != null && todayForecast['hour'] != null)
+            ? (todayForecast['hour'] as List)
+            : [];
     final now = DateTime.now();
     final List<dynamic> newForecastHours = allHours.where((hour) {
       try {
@@ -398,7 +401,8 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }).toList();
 
-    final String newCityName = locationNameOverride ?? location['name'] ?? cityName;
+    final String newCityName =
+        locationNameOverride ?? location['name'] ?? cityName;
 
     final double newTemp = (current['temp_c'] as num?)?.toDouble() ?? 0;
     final String newDesc = current['condition']?['text'] ?? "";
@@ -433,8 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
       forecastHours = newForecastHours;
       _lastLat = newLat;
       _lastLon = newLon;
-      if (_cityController.text != newCityName &&
-          !newCityName.contains(',')) {
+      if (_cityController.text != newCityName && !newCityName.contains(',')) {
         _cityController.text = newCityName;
       }
       _isLoading = false;
@@ -542,8 +545,18 @@ class _HomeScreenState extends State<HomeScreen>
 
   String _monthName(int month) {
     const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
     ];
     if (month >= 1 && month <= 12) return months[month - 1];
     return "???";
@@ -622,9 +635,8 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: (_animationsReady && !isKeyboardOpen)
-          ? _buildSettingsButton()
-          : null,
+      floatingActionButton:
+          (_animationsReady && !isKeyboardOpen) ? _buildSettingsButton() : null,
     );
   }
 
@@ -762,7 +774,8 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(height: 25),
         _buildAiGreeting(),
-        if (_greetingLoading || _aiGreeting.isNotEmpty) const SizedBox(height: 25),
+        if (_greetingLoading || _aiGreeting.isNotEmpty)
+          const SizedBox(height: 25),
         if (forecastHours.isNotEmpty) _buildHourlyForecast(tempUnit),
         if (forecastHours.isNotEmpty) const SizedBox(height: 25),
         if (forecastDays.length > 1) _buildDailyForecast(tempUnit, windUnit),
@@ -849,7 +862,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ? Colors.white.withOpacity(0.35)
                   : Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
-              border: isNow ? Border.all(color: Colors.white, width: 0.5) : null,
+              border:
+                  isNow ? Border.all(color: Colors.white, width: 0.5) : null,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -876,8 +890,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildDailyForecast(
-      TemperatureUnit tempUnit, WindSpeedUnit windUnit) {
+  Widget _buildDailyForecast(TemperatureUnit tempUnit, WindSpeedUnit windUnit) {
     return SizedBox(
       height: 130,
       child: ListView.builder(
@@ -956,11 +969,11 @@ class _HomeScreenState extends State<HomeScreen>
       left: 16,
       child: AnimatedBuilder(
         animation: _bounceAnimation,
-        builder: (context, child) =>
-            Transform.translate(offset: Offset(0, -_bounceAnimation.value), child: child),
+        builder: (context, child) => Transform.translate(
+            offset: Offset(0, -_bounceAnimation.value), child: child),
         child: FloatingActionButton(
           heroTag: "map_fab", // Added heroTag
-          backgroundColor: Colors.white.withOpacity(0.85),
+          backgroundColor: Colors.white.withOpacity(0.35),
           elevation: 4.0,
           mini: true,
           onPressed: () async {
@@ -978,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen>
                   name: 'HomeScreen');
             } else {
               centerPoint =
-                  LatLng(_lastLat ?? 14.5995, _lastLon ?? 120.9842);
+                  LatLng(_lastLat ?? 14.474686, _lastLon ?? 121.001959);
               mapTitle = cityName;
               developer.log(
                   '[HomeScreen] Opening map for last known weather location ($cityName): $centerPoint',
@@ -1001,17 +1014,15 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildSettingsButton() {
     return AnimatedBuilder(
       animation: _bounceAnimation,
-      builder: (context, child) =>
-          Transform.translate(offset: Offset(0, -_bounceAnimation.value), child: child),
+      builder: (context, child) => Transform.translate(
+          offset: Offset(0, -_bounceAnimation.value), child: child),
       child: FloatingActionButton(
         heroTag: "settings_fab", // Added heroTag
         onPressed: () async {
           FocusScope.of(context).unfocus();
 
-          final result = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => const SettingsScreen()));
+          final result = await Navigator.push(context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()));
 
           developer.log('[HomeScreen] Returned from Settings. Result: $result',
               name: 'HomeScreen');
@@ -1033,7 +1044,7 @@ class _HomeScreenState extends State<HomeScreen>
         backgroundColor: Colors.white.withOpacity(0.35),
         elevation: 6.0,
         tooltip: 'Settings',
-        child: const Icon(Icons.settings, color: Color(0xFF3F51B5), size: 28),
+        child: const Icon(Icons.settings, color: Color(0xFF3F51B5), size: 24),
       ),
     );
   }
