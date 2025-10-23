@@ -10,8 +10,14 @@ import 'map_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:weathercompanion/services/ai_greeting_service.dart';
 import 'package:weathercompanion/widgets/forecast_detail_sheet.dart';
-import 'dart:async'; // Needed for TimeoutException
-// Removed http and dart:convert imports as Nominatim function is removed
+import 'dart:async'; // Needed for TimeoutException and unawaited
+
+// ✅ ADDED: Import for Nominatim
+import 'package:nominatim_geocoding/nominatim_geocoding.dart';
+
+// Import the Settings Service and Screen
+import 'package:weathercompanion/services/settings_service.dart';
+import 'package:weathercompanion/screens/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,34 +28,35 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  // <<< Ensure this mixin is present
   final WeatherService _weatherService = WeatherService();
   final TextEditingController _cityController = TextEditingController();
   final AiGreetingService _aiGreetingService = AiGreetingService();
+  final SettingsService _settingsService = SettingsService();
+
+  TemperatureUnit _currentTempUnit = TemperatureUnit.celsius;
+  WindSpeedUnit _currentWindUnit = WindSpeedUnit.kph;
 
   String _aiGreeting = "";
   bool _greetingLoading = false;
 
-  String cityName = "Manila"; // Default city
+  String cityName = "Paranaque";
   double temperature = 0;
   String weatherDescription = "";
   int humidity = 0;
   double windSpeed = 0;
   String weatherIcon = "";
   List<dynamic> forecastDays = [];
-  bool isLoading = true; // Overall loading state for weather data
+  bool isLoading = true;
 
   double? _lastLat;
   double? _lastLon;
 
-  // Animation Variables
   late AnimationController _animationController;
   late Animation<double> _bounceAnimation;
   bool _animationsReady = false;
 
   List<dynamic> forecastHours = [];
 
-  // Detailed current conditions
   double feelsLikeTemp = 0;
   double uvIndex = 0;
   int precipitationChance = 0;
@@ -59,8 +66,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-
-    // Initialize animations safely
+    unawaited(NominatimGeocoding.init());
+    _loadSettings();
     try {
       _animationController = AnimationController(
         vsync: this,
@@ -74,11 +81,16 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (e) {
       print("Error initializing animations: $e");
     }
-
-    // Schedule the async weather load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadInitialWeather();
     });
+  }
+
+  Future<void> _loadSettings() async {
+    _currentTempUnit = await _settingsService.getTemperatureUnit();
+    _currentWindUnit = await _settingsService.getWindSpeedUnit();
+    if (mounted) setState(() {});
+    print("Settings loaded: Temp=$_currentTempUnit, Wind=$_currentWindUnit");
   }
 
   @override
@@ -90,21 +102,24 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  /// Fetches weather on startup using Coordinates directly (No Nominatim).
-  /// THIS IS THE ONLY VERSION OF THIS FUNCTION
+  //
+  // ✅ --- THIS FUNCTION IS UPDATED WITH CORRECT PROPERTIES ---
+  //
   Future<void> _loadInitialWeather() async {
     bool serviceEnabled;
     LocationPermission permission;
     Position? position;
-    String finalQuery = "Manila"; // Default query
+    String finalQuery = "Paranaque"; // Fallback
 
     if (!mounted) return;
-    setState(() {
-      isLoading = true;
-      _greetingLoading = true;
-      _aiGreeting = "";
-    });
-    print("--- Starting _loadInitialWeather (Using Coordinates Only) ---");
+    if (!isLoading) {
+      setState(() {
+        isLoading = true;
+        _greetingLoading = true;
+        _aiGreeting = "";
+      });
+    }
+    print("--- Starting _loadInitialWeather (Using Nominatim) ---");
 
     try {
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -128,48 +143,69 @@ class _HomeScreenState extends State<HomeScreen>
             "Startup CP: Got current position: (${position?.latitude}, ${position?.longitude})",
           );
         } on TimeoutException {
-          print(
-            "Startup CP: Timed out getting current position. Trying Last Known...",
-          );
-          position =
-              await Geolocator.getLastKnownPosition(); // Fallback to LKP on timeout
+          print("Startup CP: Timed out... Trying Last Known...");
+          position = await Geolocator.getLastKnownPosition();
           print(
             "Startup LKP after Timeout: (${position?.latitude}, ${position?.longitude})",
           );
         } catch (e) {
-          print(
-            "Startup CP: Error getting current position: $e. Trying Last Known...",
-          );
-          position =
-              await Geolocator.getLastKnownPosition(); // Fallback to LKP on error
+          print("Startup CP: Error: $e. Trying Last Known...");
+          position = await Geolocator.getLastKnownPosition();
           print(
             "Startup LKP after Error: (${position?.latitude}, ${position?.longitude})",
           );
         }
 
-        // Use coordinates directly if position was obtained
+        // --- HERE IS THE CORRECTED NOMINATIM LOGIC ---
         if (position != null) {
-          finalQuery = "${position.latitude},${position.longitude}";
           print(
-            "Startup Position Found. Final query will be Coordinates: '$finalQuery'",
+            "Startup: Position found. Attempting Nominatim reverse geocode...",
           );
+          try {
+            Coordinate coordinate = Coordinate(
+              latitude: position.latitude,
+              longitude: position.longitude,
+            );
+            Geocoding geo = await NominatimGeocoding.to.reverseGeoCoding(
+              coordinate,
+            );
+
+            // ✅ FIX: Check for city, then suburb, then neighbourhood
+            if (geo.address.city.isNotEmpty) {
+              finalQuery = geo.address.city;
+            } else if (geo.address.suburb.isNotEmpty) {
+              // Use suburb
+              finalQuery = geo.address.suburb;
+            } else if (geo.address.neighbourhood.isNotEmpty) {
+              // Use neighbourhood
+              finalQuery = geo.address.neighbourhood;
+            } else {
+              print(
+                "Nominatim couldn't find city/suburb/neighbourhood. Defaulting to 'Paranaque'.",
+              );
+            }
+            print(
+              "Startup: Nominatim reverse geocode success. Final query will be: '$finalQuery'",
+            );
+          } catch (e) {
+            print(
+              "Startup: Nominatim reverse geocode FAILED: $e. Defaulting to 'Paranaque'.",
+            );
+          }
         } else {
           print(
             "Startup: No position obtained. Final query defaults to '$finalQuery'.",
           );
-          // finalQuery remains "Manila"
         }
       } else {
         print(
           "Startup Checks Failed: Location off/denied. Final query defaults to '$finalQuery'.",
         );
-        // finalQuery remains "Manila"
       }
     } catch (e) {
       print(
         "Startup Error: Unexpected error: $e. Final query defaults to '$finalQuery'.",
       );
-      // finalQuery remains "Manila"
     }
 
     print(
@@ -178,71 +214,57 @@ class _HomeScreenState extends State<HomeScreen>
     await _fetchWeatherAndGreeting(finalQuery);
   }
 
-  /// Tries to get the current location for Map Button (tries LKP first).
   Future<Position?> _tryGetCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
     Position? position;
 
-    // Check Service Enabled
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Location services are disabled.')),
         );
-      }
       return null;
     }
 
-    // Check Permissions
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        if (mounted) {
+        if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Location permissions are denied')),
           );
-        }
         return null;
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Location permissions are permanently denied, we cannot request permissions.',
-            ),
+            content: Text('Location permissions are permanently denied...'),
           ),
         );
-      }
       return null;
     }
 
-    // If permissions okay, proceed
     try {
-      // 1. Try LKP first
       position = await Geolocator.getLastKnownPosition();
       if (position != null &&
           DateTime.now().difference(position.timestamp!).inMinutes < 5) {
         print("Map Button: Using recent last known location.");
         return position;
       } else {
-        // 2. If LKP fails or is old, get CP
         print(
           "Map Button: Last known location old/null. Getting current position.",
         );
         return await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(
-            seconds: 10,
-          ), // Shorter timeout for button press OK
+          timeLimit: const Duration(seconds: 10),
         );
       }
     } catch (e) {
-      // Handle errors
       String errorMsg = 'Failed to get location: $e';
       if (e is TimeoutException) {
         errorMsg = 'Could not get location fix in time.';
@@ -250,21 +272,16 @@ class _HomeScreenState extends State<HomeScreen>
       } else {
         print("Failed to get location: $e");
       }
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(errorMsg)));
-      }
       return null;
     }
   }
 
-  // <<< REMOVED the _getCityNameFromCoords function definition >>>
-
-  /// Fetches Weather and AI Greeting. Accepts city name OR coordinates string.
   Future<void> _fetchWeatherAndGreeting([String? queryOverride]) async {
     if (!mounted) return;
-    // Set loading states only if not already loading
     if (!isLoading && !_greetingLoading) {
       setState(() {
         isLoading = true;
@@ -285,7 +302,6 @@ class _HomeScreenState extends State<HomeScreen>
       print("Weather data received: ${data != null}");
 
       if (data != null && mounted) {
-        // ... (Parsing logic remains the same)
         final current = data['current'];
         final location = data['location'];
         final forecast = data['forecast']?['forecastday'] ?? [];
@@ -325,7 +341,6 @@ class _HomeScreenState extends State<HomeScreen>
         final String newSunrise = todayAstro['sunrise'] ?? "N/A";
         final String newSunset = todayAstro['sunset'] ?? "N/A";
 
-        // --- Generate Greeting ---
         final String localTimeString = location['localtime'] ?? "";
         DateTime currentTime;
         try {
@@ -340,7 +355,6 @@ class _HomeScreenState extends State<HomeScreen>
           currentTime,
         );
 
-        // --- Update UI State ---
         print("Updating UI state with weather...");
         if (mounted) {
           setState(() {
@@ -362,12 +376,11 @@ class _HomeScreenState extends State<HomeScreen>
             if (_cityController.text != newCityName) {
               _cityController.text = newCityName;
             }
-            isLoading = false; // Main loading done
+            isLoading = false;
           });
         }
         print("Weather UI state updated.");
 
-        // --- Wait for greeting ---
         final generatedGreeting = await greetingFuture;
         if (mounted) {
           setState(() {
@@ -412,7 +425,9 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  /// Handles the "My Location" button press (Uses coordinates directly).
+  //
+  // ✅ --- THIS FUNCTION IS UPDATED WITH CORRECT PROPERTIES ---
+  //
   Future<void> _getUserLocationAndFetchWeather() async {
     if (mounted) {
       setState(() {
@@ -421,17 +436,52 @@ class _HomeScreenState extends State<HomeScreen>
         _aiGreeting = "";
       });
     }
-
-    final Position? position =
-        await _tryGetCurrentLocation(); // Tries LKP first
-
+    final Position? position = await _tryGetCurrentLocation();
     if (position != null) {
-      // ✅ Directly use coordinates
-      String query = "${position.latitude},${position.longitude}";
-      print("My Location Button: Using Coordinates query: $query");
+      String query = "${position.latitude},${position.longitude}"; // Fallback
+      print(
+        "My Location Button: Position found. Attempting Nominatim reverse geocode...",
+      );
+
+      try {
+        Coordinate coordinate = Coordinate(
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+        Geocoding geo = await NominatimGeocoding.to.reverseGeoCoding(
+          coordinate,
+        );
+
+        String? foundName;
+        // ✅ FIX: Check for city, then suburb, then neighbourhood
+        if (geo.address.city.isNotEmpty) {
+          foundName = geo.address.city;
+        } else if (geo.address.suburb.isNotEmpty) {
+          // Use suburb
+          foundName = geo.address.suburb;
+        } else if (geo.address.neighbourhood.isNotEmpty) {
+          // Use neighbourhood
+          foundName = geo.address.neighbourhood;
+        }
+
+        if (foundName != null) {
+          query = foundName; // Overwrite query with city name
+          print(
+            "My Location Button: Nominatim success. Using name query: '$query'",
+          );
+        } else {
+          print(
+            "My Location Button: Nominatim found no specific name. Using coordinate query: '$query'",
+          );
+        }
+      } catch (e) {
+        print(
+          "My Location Button: Nominatim failed: $e. Using coordinate query: '$query'",
+        );
+      }
+
       await _fetchWeatherAndGreeting(query);
     } else {
-      // Failed (snackbar already shown)
       if (mounted) {
         setState(() {
           isLoading = false;
@@ -480,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header Row...
+                    // Header Row
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -492,7 +542,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          "WeatherCompanion • Beta v1.5.9", // Update version as needed
+                          "WeatherCompanion • Beta v1.7.0", // Updated version
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -503,7 +553,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // Search Bar Row...
+                    // Search Bar Row
                     Row(
                       children: [
                         Expanded(
@@ -524,8 +574,8 @@ class _HomeScreenState extends State<HomeScreen>
                                 color: Colors.white,
                               ),
                             ),
-                            onSubmitted: (value) {
-                              if (value.isNotEmpty) _fetchWeatherAndGreeting();
+                            onSubmitted: (v) {
+                              if (v.isNotEmpty) _fetchWeatherAndGreeting();
                             },
                           ),
                         ),
@@ -536,15 +586,17 @@ class _HomeScreenState extends State<HomeScreen>
                             color: Colors.white,
                           ),
                           onPressed: _getUserLocationAndFetchWeather,
+                          tooltip: "My Location",
                         ),
                         IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.white),
                           onPressed: () => _fetchWeatherAndGreeting(null),
+                          tooltip: "Refresh",
                         ),
                       ],
                     ),
                     const SizedBox(height: 25),
-                    // City Name Text...
+                    // City Name
                     Text(
                       cityName,
                       style: const TextStyle(
@@ -554,7 +606,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // Weather Card or Loading...
+                    // Weather Card or Loading
                     if (isLoading)
                       const Center(
                         child: SizedBox(
@@ -568,20 +620,35 @@ class _HomeScreenState extends State<HomeScreen>
                       )
                     else
                       WeatherCard(
-                        temperature: temperature,
+                        displayTemperature:
+                            _currentTempUnit == TemperatureUnit.celsius
+                            ? temperature
+                            : _settingsService.toFahrenheit(temperature),
+                        tempUnitSymbol:
+                            _currentTempUnit == TemperatureUnit.celsius
+                            ? 'C'
+                            : 'F',
                         icon: weatherIcon,
                         description: weatherDescription,
                         date: formattedToday,
                         humidity: humidity,
-                        windSpeed: windSpeed,
-                        feelsLikeTemp: feelsLikeTemp,
+                        displayWindSpeed: _currentWindUnit == WindSpeedUnit.kph
+                            ? windSpeed
+                            : _settingsService.toMph(windSpeed),
+                        windUnitSymbol: _currentWindUnit == WindSpeedUnit.kph
+                            ? 'kph'
+                            : 'mph',
+                        feelsLikeTemp:
+                            _currentTempUnit == TemperatureUnit.celsius
+                            ? feelsLikeTemp
+                            : _settingsService.toFahrenheit(feelsLikeTemp),
                         uvIndex: uvIndex,
                         precipitationChance: precipitationChance,
                         sunriseTime: sunriseTime,
                         sunsetTime: sunsetTime,
                       ),
                     const SizedBox(height: 25),
-                    // AI Greeting or Loading...
+                    // AI Greeting or Loading
                     if (_greetingLoading)
                       const Center(
                         child: Padding(
@@ -613,7 +680,7 @@ class _HomeScreenState extends State<HomeScreen>
                               'assets/images/logo.png',
                               height: 40,
                               width: 40,
-                            ), // Use correct mascot image path
+                            ),
                             const SizedBox(height: 10),
                             Text(
                               _aiGreeting,
@@ -632,7 +699,7 @@ class _HomeScreenState extends State<HomeScreen>
                       const SizedBox.shrink(),
                     if (_greetingLoading || _aiGreeting.isNotEmpty)
                       const SizedBox(height: 25),
-                    // Hourly Forecast...
+                    // Hourly Forecast
                     if (!isLoading && forecastHours.isNotEmpty) ...[
                       SizedBox(
                         height: 110,
@@ -642,8 +709,8 @@ class _HomeScreenState extends State<HomeScreen>
                           itemBuilder: (context, index) {
                             final hourData = forecastHours[index];
                             final timeStr = hourData['time'] ?? "";
-                            final temp =
-                                (hourData['temp_c'] as num?)?.round() ?? 0;
+                            final tempC =
+                                (hourData['temp_c'] as num?)?.toDouble() ?? 0;
                             final iconUrl =
                                 hourData['condition']?['icon'] ?? "";
                             String formattedTime = "N/A";
@@ -653,9 +720,7 @@ class _HomeScreenState extends State<HomeScreen>
                               formattedTime = DateFormat(
                                 'h a',
                               ).format(parsedTime);
-                            } catch (e) {
-                              /* keep N/A */
-                            }
+                            } catch (e) {}
                             bool isNow =
                                 index == 0 &&
                                 parsedTime != null &&
@@ -695,7 +760,9 @@ class _HomeScreenState extends State<HomeScreen>
                                   ),
                                   const SizedBox(height: 5),
                                   Text(
-                                    "$temp°",
+                                    _currentTempUnit == TemperatureUnit.celsius
+                                        ? "${tempC.round()}°"
+                                        : "${_settingsService.toFahrenheit(tempC).round()}°",
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 16,
@@ -709,7 +776,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       const SizedBox(height: 25),
                     ],
-                    // 7-Day Forecast...
+                    // 7-Day Forecast
                     if (!isLoading && forecastDays.isNotEmpty) ...[
                       SizedBox(
                         height: 130,
@@ -730,18 +797,33 @@ class _HomeScreenState extends State<HomeScreen>
                                 dayInfo['condition']?['text'] ?? "";
                             final String forecastIconUrl =
                                 dayInfo['condition']?['icon'] ?? "";
-                            final minTemp =
+                            final minTempC =
                                 (dayInfo['mintemp_c'] as num?)?.toInt() ?? 0;
-                            final maxTemp =
+                            final maxTempC =
                                 (dayInfo['maxtemp_c'] as num?)?.toInt() ?? 0;
+                            final String displayMin =
+                                _currentTempUnit == TemperatureUnit.celsius
+                                ? "$minTempC"
+                                : "${_settingsService.toFahrenheit(minTempC.toDouble()).round()}";
+                            final String displayMax =
+                                _currentTempUnit == TemperatureUnit.celsius
+                                ? "$maxTempC"
+                                : "${_settingsService.toFahrenheit(maxTempC.toDouble()).round()}";
+                            final String tempSymbol =
+                                _currentTempUnit == TemperatureUnit.celsius
+                                ? "°"
+                                : "°";
                             return InkWell(
                               onTap: () {
                                 showModalBottomSheet(
                                   context: context,
                                   isScrollControlled: true,
                                   backgroundColor: Colors.transparent,
-                                  builder: (context) =>
-                                      ForecastDetailSheet(dayData: day),
+                                  builder: (context) => ForecastDetailSheet(
+                                    dayData: day,
+                                    tempUnit: _currentTempUnit,
+                                    windUnit: _currentWindUnit,
+                                  ),
                                 );
                               },
                               borderRadius: BorderRadius.circular(12),
@@ -770,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ),
                                     const SizedBox(height: 5),
                                     Text(
-                                      "$minTemp° / $maxTemp°",
+                                      "$displayMin$tempSymbol / $displayMax$tempSymbol",
                                       style: const TextStyle(
                                         color: Colors.white,
                                       ),
@@ -794,7 +876,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ],
                     const SizedBox(height: 25),
-                    // AI Chat Box...
+                    // AI Chat Box
                     AiAssistantWidget(
                       cityName: cityName,
                       temperature: temperature,
@@ -807,7 +889,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
-            // Footer...
+            // Footer
             Visibility(
               visible: !isKeyboardOpen,
               child: Positioned(
@@ -826,11 +908,67 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
+
+            // Map Button
+            if (_animationsReady)
+              Positioned(
+                bottom: 16,
+                left: 16,
+                child: AnimatedBuilder(
+                  animation: _bounceAnimation,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(0, -_bounceAnimation.value),
+                      child: child,
+                    );
+                  },
+                  child: FloatingActionButton(
+                    backgroundColor: Colors.white.withOpacity(0.35),
+                    elevation: 6.0,
+                    onPressed: () async {
+                      Position? position = await _tryGetCurrentLocation();
+                      if (!mounted) return;
+                      if (position != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MapScreen(
+                              center: LatLng(
+                                position.latitude,
+                                position.longitude,
+                              ),
+                              title: "My Location",
+                            ),
+                          ),
+                        );
+                      } else {
+                        final lat = _lastLat ?? 14.5995;
+                        final lon = _lastLon ?? 120.9842;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MapScreen(
+                              center: LatLng(lat, lon),
+                              title: cityName,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Icon(
+                      Icons.map,
+                      color: Color(0xFF3949AB),
+                      size: 24,
+                    ),
+                    tooltip: 'Open Map',
+                  ),
+                ),
+              ),
           ],
         ),
       ),
-      // Map Button...
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      // Settings Button
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: _animationsReady
           ? AnimatedBuilder(
               animation: _bounceAnimation,
@@ -841,40 +979,35 @@ class _HomeScreenState extends State<HomeScreen>
                 );
               },
               child: FloatingActionButton(
-                backgroundColor: Colors.white,
-                elevation: 6.0,
                 onPressed: () async {
-                  Position? position = await _tryGetCurrentLocation();
-                  if (!mounted) return;
-                  if (position != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MapScreen(
-                          center: LatLng(position.latitude, position.longitude),
-                          title: "My Location",
-                        ),
-                      ),
-                    );
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+
+                  await _loadSettings();
+
+                  if (result is String && result.isNotEmpty && mounted) {
+                    print("Received city from SettingsScreen: $result");
+                    _cityController.text = result;
+                    _fetchWeatherAndGreeting(result);
                   } else {
-                    final lat = _lastLat ?? 14.5995;
-                    final lon = _lastLon ?? 120.9842;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MapScreen(
-                          center: LatLng(lat, lon),
-                          title: cityName,
-                        ),
-                      ),
+                    print(
+                      "Returning from settings, refetching current weather.",
                     );
+                    _fetchWeatherAndGreeting(null);
                   }
                 },
+                backgroundColor: Colors.white,
+                elevation: 6.0,
                 child: const Icon(
-                  Icons.map,
+                  Icons.settings,
                   color: Color(0xFF3949AB),
-                  size: 24,
+                  size: 28,
                 ),
+                tooltip: 'Settings',
               ),
             )
           : null,

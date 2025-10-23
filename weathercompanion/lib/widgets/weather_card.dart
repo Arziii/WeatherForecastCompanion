@@ -1,16 +1,19 @@
 // lib/widgets/weather_card.dart
 import 'package:flutter/material.dart';
 import 'package:weathercompanion/widgets/weather_icon_image.dart';
+// Note: No 'map_screen.dart' or 'home_screen.dart' imports are needed here.
 
 class WeatherCard extends StatelessWidget {
-  final double temperature;
+  // Use display-ready values
+  final double displayTemperature;
+  final String tempUnitSymbol; // 'C' or 'F'
   final String icon;
   final String description;
   final String date;
   final int humidity;
-  final double windSpeed;
-  // ✅ ADD New parameters
-  final double feelsLikeTemp;
+  final double displayWindSpeed;
+  final String windUnitSymbol; // 'kph' or 'mph'
+  final double feelsLikeTemp; // Already converted if needed
   final double uvIndex;
   final int precipitationChance;
   final String sunriseTime;
@@ -18,13 +21,14 @@ class WeatherCard extends StatelessWidget {
 
   const WeatherCard({
     super.key,
-    required this.temperature,
+    required this.displayTemperature,
+    required this.tempUnitSymbol,
     required this.icon,
     required this.description,
     required this.date,
     required this.humidity,
-    required this.windSpeed,
-    // ✅ ADD New parameters to constructor
+    required this.displayWindSpeed,
+    required this.windUnitSymbol,
     required this.feelsLikeTemp,
     required this.uvIndex,
     required this.precipitationChance,
@@ -36,44 +40,26 @@ class WeatherCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 15,
-      ), // Back to original padding
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF7986CB), Color(0xFF3F51B5)], // Your gradient
+          colors: [Color(0xFF7986CB), Color(0xFF3F51B5)],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+         boxShadow: [ BoxShadow( color: Colors.black26, blurRadius: 10, offset: Offset(0, 4), ), ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, // Align date to start
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Date
-          Text(
-            date,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14, // Original size
-            ),
-          ),
+          Text(date, style: const TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 10),
-
-          // Main Row: Icon, Temp, Desc
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              WeatherIconImage(iconUrl: icon, size: 70), // Original size
+              WeatherIconImage(iconUrl: icon, size: 70),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
@@ -81,33 +67,16 @@ class WeatherCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      "${temperature.round()}°C", // Rounded actual temp
-                      style: const TextStyle(
-                        fontSize: 42, // Adjusted size
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      "${displayTemperature.round()}°$tempUnitSymbol",
+                      style: const TextStyle(fontSize: 42, color: Colors.white, fontWeight: FontWeight.bold),
                     ),
-                    // ✅ ADD Feels Like Temp
                     Text(
+                      // Display feelsLike temp without symbol again, as units match display temp
                       "Feels like ${feelsLikeTemp.round()}°",
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 5),
-                    Text(
-                      description,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: Colors.white, // Brighter description
-                        fontSize: 16, // Original size
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Text(description, textAlign: TextAlign.right, style: const TextStyle(color: Colors.white, fontSize: 16), maxLines: 2, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -115,53 +84,24 @@ class WeatherCard extends StatelessWidget {
           ),
           const SizedBox(height: 15),
           Divider(color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 10), // Reduced space after divider
-          // ✅ --- UPDATED: Detail Rows ---
-          // Row 1: Humidity, Wind, Precip Chance
-          Row(
+          const SizedBox(height: 10),
+          Row( // Row 1
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildDetailItem(
-                icon: Icons.water_drop_outlined,
-                value: "$humidity%",
-                label: "Humidity",
-              ),
-              _buildDetailItem(
-                icon: Icons.air,
-                value: "${windSpeed.round()} kph",
-                label: "Wind",
-              ),
-              _buildDetailItem(
-                icon: Icons
-                    .umbrella_outlined, // Or Icons.ac_unit for snow if needed
-                value: "$precipitationChance%",
-                label: "Precip",
-              ),
+              _buildDetailItem(icon: Icons.water_drop_outlined, value: "$humidity%", label: "Humidity"),
+              _buildDetailItem(icon: Icons.air, value: "${displayWindSpeed.round()} $windUnitSymbol", label: "Wind"),
+              _buildDetailItem(icon: Icons.umbrella_outlined, value: "$precipitationChance%", label: "Precip"),
             ],
           ),
-          const SizedBox(height: 15), // Space between detail rows
-          // Row 2: UV Index, Sunrise, Sunset
-          Row(
+          const SizedBox(height: 15),
+          Row( // Row 2
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildDetailItem(
-                icon: Icons.wb_sunny_outlined,
-                value: uvIndex.toStringAsFixed(0), // No decimal needed
-                label: "UV Index",
-              ),
-              _buildDetailItem(
-                icon: Icons.wb_twilight_outlined, // Sunrise icon
-                value: sunriseTime,
-                label: "Sunrise",
-              ),
-              _buildDetailItem(
-                icon: Icons.dark_mode_outlined, // Sunset icon
-                value: sunsetTime,
-                label: "Sunset",
-              ),
+              _buildDetailItem(icon: Icons.wb_sunny_outlined, value: uvIndex.toStringAsFixed(0), label: "UV Index"),
+              _buildDetailItem(icon: Icons.wb_twilight_outlined, value: sunriseTime, label: "Sunrise"),
+              _buildDetailItem(icon: Icons.dark_mode_outlined, value: sunsetTime, label: "Sunset"),
             ],
           ),
-          // ✅ --- END OF DETAIL ROWS ---
         ],
       ),
     );
@@ -173,34 +113,33 @@ class WeatherCard extends StatelessWidget {
     required String value,
     required String label,
   }) {
-    // Wrap in a SizedBox to constrain width and ensure wrapping
     return SizedBox(
-      width: 75, // Adjust width as needed for your layout
+      width: 75, // Constrain width
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
+         mainAxisAlignment: MainAxisAlignment.center,
+         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: Colors.white70, size: 22), // Slightly larger icon
+          Icon(icon, color: Colors.white70, size: 22),
           const SizedBox(height: 4),
           Text(
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15, // Slightly larger value
+              fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
+             maxLines: 1,
+             overflow: TextOverflow.ellipsis, // Prevent overflow
+             textAlign: TextAlign.center,
           ),
           Text(
             label,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 12, // Smaller label
+              fontSize: 12,
             ),
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            overflow: TextOverflow.ellipsis, // Prevent overflow
             textAlign: TextAlign.center,
           ),
         ],
