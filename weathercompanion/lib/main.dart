@@ -20,7 +20,7 @@ void main() {
   Gemini.init(
     apiKey: geminikey,
     // ✅ FIX: Removed the model/modelName parameter. It's not in v2.0.5
-    enableDebugging: false, // We can turn this off later
+    enableDebugging: true // We can turn this off later
   );
 
   runApp(const WeatherCompanionApp());
