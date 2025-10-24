@@ -1,7 +1,6 @@
 // lib/widgets/weather_card.dart
 import 'package:flutter/material.dart';
 import 'package:weathercompanion/widgets/weather_icon_image.dart';
-// Note: No 'map_screen.dart' or 'home_screen.dart' imports are needed here.
 
 class WeatherCard extends StatelessWidget {
   // Use display-ready values
@@ -10,6 +9,8 @@ class WeatherCard extends StatelessWidget {
   final String icon;
   final String description;
   final String date;
+  // ✅ ADDED THIS LINE
+  final String localTime;
   final int humidity;
   final double displayWindSpeed;
   final String windUnitSymbol; // 'kph' or 'mph'
@@ -26,6 +27,8 @@ class WeatherCard extends StatelessWidget {
     required this.icon,
     required this.description,
     required this.date,
+    // ✅ ADDED THIS REQUIRED PARAMETER
+    required this.localTime,
     required this.humidity,
     required this.displayWindSpeed,
     required this.windUnitSymbol,
@@ -48,12 +51,28 @@ class WeatherCard extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [Color(0xFF7986CB), Color(0xFF3F51B5)],
         ),
-         boxShadow: [ BoxShadow( color: Colors.black26, blurRadius: 10, offset: Offset(0, 4), ), ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(date, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          // Display Date and Time side-by-side
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(date,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+              // ✅ USE THE localTime PARAMETER
+              Text("Local Time: $localTime",
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            ],
+          ),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -68,15 +87,26 @@ class WeatherCard extends StatelessWidget {
                   children: [
                     Text(
                       "${displayTemperature.round()}°$tempUnitSymbol",
-                      style: const TextStyle(fontSize: 42, color: Colors.white, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 42,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold),
                     ),
                     Text(
                       // Display feelsLike temp without symbol again, as units match display temp
                       "Feels like ${feelsLikeTemp.round()}°",
-                      style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 5),
-                    Text(description, textAlign: TextAlign.right, style: const TextStyle(color: Colors.white, fontSize: 16), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    Text(description,
+                        textAlign: TextAlign.right,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 16),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -85,21 +115,41 @@ class WeatherCard extends StatelessWidget {
           const SizedBox(height: 15),
           Divider(color: Colors.white.withOpacity(0.2)),
           const SizedBox(height: 10),
-          Row( // Row 1
+          Row(
+            // Row 1
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildDetailItem(icon: Icons.water_drop_outlined, value: "$humidity%", label: "Humidity"),
-              _buildDetailItem(icon: Icons.air, value: "${displayWindSpeed.round()} $windUnitSymbol", label: "Wind"),
-              _buildDetailItem(icon: Icons.umbrella_outlined, value: "$precipitationChance%", label: "Precip"),
+              _buildDetailItem(
+                  icon: Icons.water_drop_outlined,
+                  value: "$humidity%",
+                  label: "Humidity"),
+              _buildDetailItem(
+                  icon: Icons.air,
+                  value: "${displayWindSpeed.round()} $windUnitSymbol",
+                  label: "Wind"),
+              _buildDetailItem(
+                  icon: Icons.umbrella_outlined,
+                  value: "$precipitationChance%",
+                  label: "Precip"),
             ],
           ),
           const SizedBox(height: 15),
-          Row( // Row 2
+          Row(
+            // Row 2
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildDetailItem(icon: Icons.wb_sunny_outlined, value: uvIndex.toStringAsFixed(0), label: "UV Index"),
-              _buildDetailItem(icon: Icons.wb_twilight_outlined, value: sunriseTime, label: "Sunrise"),
-              _buildDetailItem(icon: Icons.dark_mode_outlined, value: sunsetTime, label: "Sunset"),
+              _buildDetailItem(
+                  icon: Icons.wb_sunny_outlined,
+                  value: uvIndex.toStringAsFixed(0),
+                  label: "UV Index"),
+              _buildDetailItem(
+                  icon: Icons.wb_twilight_outlined,
+                  value: sunriseTime,
+                  label: "Sunrise"),
+              _buildDetailItem(
+                  icon: Icons.dark_mode_outlined,
+                  value: sunsetTime,
+                  label: "Sunset"),
             ],
           ),
         ],
@@ -116,8 +166,8 @@ class WeatherCard extends StatelessWidget {
     return SizedBox(
       width: 75, // Constrain width
       child: Column(
-         mainAxisAlignment: MainAxisAlignment.center,
-         crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, color: Colors.white70, size: 22),
           const SizedBox(height: 4),
@@ -128,9 +178,9 @@ class WeatherCard extends StatelessWidget {
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
-             maxLines: 1,
-             overflow: TextOverflow.ellipsis, // Prevent overflow
-             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis, // Prevent overflow
+            textAlign: TextAlign.center,
           ),
           Text(
             label,
