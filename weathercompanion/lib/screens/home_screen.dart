@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:weathercompanion/services/settings_service.dart';
 import 'package:weathercompanion/screens/settings_screen.dart';
 import 'dart:developer' as developer;
+import 'package:lottie/lottie.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -60,10 +61,14 @@ class _HomeScreenState extends State<HomeScreen>
   double feelsLikeTemp = 0;
   double uvIndex = 0;
   int precipitationChance = 0;
-  String sunriseTime = "";
-  String sunsetTime = "";
-  String localTime = "--:--"; // State variable for formatted local time
-  String timezoneId = "UTC"; // <-- ADDED: State variable for timezone ID
+  String sunriseTime = ""; // Keep as String from API (e.g., "05:49 AM")
+  String sunsetTime = ""; // Keep as String from API (e.g., "05:31 PM")
+  String localTime = "--:--"; // Keep as String (e.g., "10:03 PM")
+  String timezoneId = "UTC";
+
+  String _currentAnimation = 'assets/animations/default.json';
+  bool _isContentLoaded = false;
+  bool _isDay = true; // Default to day
 
   @override
   void initState() {
@@ -98,7 +103,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // --- MODIFIED: Load settings and check for default location ---
   Future<void> _loadSettingsAndInitialData() async {
     developer.log('[HomeScreen] Post-frame: Loading settings...',
         name: 'HomeScreen');
@@ -108,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen>
           '[HomeScreen] Settings loaded. Checking for default location...',
           name: 'HomeScreen');
 
-      // --- NEW: Check for a default location ---
       final String? defaultLocation =
           await _settingsService.getDefaultLocation();
 
@@ -116,17 +119,14 @@ class _HomeScreenState extends State<HomeScreen>
         developer.log(
             '[HomeScreen] Default location found: $defaultLocation. Fetching data for default.',
             name: 'HomeScreen');
-        // Load weather for the default location
         await _fetchData(
             cityQueryOverride: defaultLocation, isInitialLoad: true);
       } else {
         developer.log(
             '[HomeScreen] No default location. Fetching initial data for current location.',
             name: 'HomeScreen');
-        // Use current location for initial load (original behavior)
         await _fetchData(useCurrentLocation: true, isInitialLoad: true);
       }
-      // --- END NEW ---
     } catch (e) {
       developer.log('[HomeScreen] Error during initial load sequence: $e',
           name: 'HomeScreen', error: e);
@@ -139,7 +139,6 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }
   }
-  // --- END MODIFIED ---
 
   Future<void> _loadSettings() async {
     try {
@@ -178,7 +177,10 @@ class _HomeScreenState extends State<HomeScreen>
     if (!_isLoading) {
       setState(() => _isLoading = true);
     }
-    setState(() => _errorMessage = null);
+    setState(() {
+      _errorMessage = null;
+      _isContentLoaded = false;
+    });
 
     if (!isInitialLoad) {
       setState(() {
@@ -198,27 +200,22 @@ class _HomeScreenState extends State<HomeScreen>
 
     try {
       // 1. Determine Coordinates & Location Name
-      // --- MODIFIED: Ensure cityQueryOverride is prioritized even if _cityController is empty ---
       if (useCurrentLocation ||
           (cityQueryOverride == null &&
               _cityController.text.isEmpty &&
               _lastLat == null)) {
-        // --- END MODIFIED ---
         developer.log(
             '[HomeScreen] Determining current location coordinates...',
             name: 'HomeScreen');
-        final position =
-            await _getCurrentLocationPosition(); // Get Position object
+        final position = await _getCurrentLocationPosition();
         lat = position.latitude;
         lon = position.longitude;
-        locationNameToDisplay =
-            await _getCityNameFromCoordinates(lat, lon); // Get name from coords
+        locationNameToDisplay = await _getCityNameFromCoordinates(lat, lon);
         developer.log(
             '[HomeScreen] Using Current Location: Lat=$lat, Lon=$lon, Name=$locationNameToDisplay',
             name: 'HomeScreen');
       } else {
         String query = cityQueryOverride ?? _cityController.text;
-        // --- NEW: Handle case where query is still empty but we have a _lastLat
         if (query.isEmpty && _lastLat != null && _lastLon != null) {
           developer.log(
               '[HomeScreen] No query, using last known coordinates: Lat=$_lastLat, Lon=$_lastLon',
@@ -227,19 +224,15 @@ class _HomeScreenState extends State<HomeScreen>
           lon = _lastLon!;
           locationNameToDisplay =
               await _getCityNameFromCoordinates(lat, lon) ?? cityName;
-        }
-        // --- END NEW ---
-        else {
+        } else {
           developer.log('[HomeScreen] Geocoding city: $query...',
               name: 'HomeScreen');
-          final coords = await _getCoordinatesFromCityName(
-              query); // Get coords from city name
+          final coords = await _getCoordinatesFromCityName(query);
           if (coords != null) {
             lat = coords['lat'];
             lon = coords['lon'];
-            locationNameToDisplay = await _getCityNameFromCoordinates(
-                    lat!, lon!) ??
-                query; // Verify name via reverse geocode or use original query
+            locationNameToDisplay =
+                await _getCityNameFromCoordinates(lat!, lon!) ?? query;
             developer.log(
                 '[HomeScreen] Using Searched Location: Lat=$lat, Lon=$lon, Name=$locationNameToDisplay',
                 name: 'HomeScreen');
@@ -249,17 +242,14 @@ class _HomeScreenState extends State<HomeScreen>
         }
       }
 
-      // Update UI optimistically with name
       if (mounted) setState(() => cityName = locationNameToDisplay);
 
       // 2. Fetch Weather Data using coordinates
       if (lat != null && lon != null) {
         developer.log('[HomeScreen] Fetching Open-Meteo for Lat=$lat, Lon=$lon',
             name: 'HomeScreen');
-        // --- NEW: Store last used coordinates ---
         _lastLat = lat;
         _lastLon = lon;
-        // --- END NEW ---
         weatherData = await _weatherService.fetchWeatherOpenMeteo(lat, lon);
       } else {
         throw Exception('Could not determine coordinates for weather lookup.');
@@ -305,7 +295,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- Get Position ---
   Future<Position> _getCurrentLocationPosition() async {
-    // ... (rest of the function is the same) ...
     developer.log('[HomeScreen] Attempting to get current Position...',
         name: 'HomeScreen');
     try {
@@ -367,15 +356,16 @@ class _HomeScreenState extends State<HomeScreen>
   // --- Get coordinates from city name (Nominatim Forward Geocoding) ---
   Future<Map<String, double>?> _getCoordinatesFromCityName(
       String cityName) async {
-    // ... (rest of the function is the same) ...
+    // --- MODIFIED: Removed countrycodes=ph ---
     final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(cityName)}&format=jsonv2&limit=1&countrycodes=ph&accept-language=en');
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(cityName)}&format=jsonv2&limit=1&accept-language=en');
+    // --- END MODIFIED ---
     developer.log('[HomeScreen] Nominatim Forward Geocoding URL: $url',
         name: 'HomeScreen');
 
     try {
       final response = await http.get(url, headers: {
-        'User-Agent': 'WeatherCompanionApp/1.7.1 (johnbalmedina30@gmail.com)'
+        'User-Agent': 'WeatherCompanionApp/2.0.2 (johnbalmedina30@gmail.com)'
       });
       if (response.statusCode == 200) {
         final results = json.decode(response.body) as List;
@@ -407,17 +397,18 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- Get city name from coordinates (Nominatim Reverse Geocoding) ---
   Future<String> _getCityNameFromCoordinates(double lat, double lon) async {
-    // ... (rest of the function is the same) ...
     developer.log('[HomeScreen] Reverse geocoding coords: ($lat, $lon)...',
         name: 'HomeScreen');
+    // --- MODIFIED: Removed countrycodes=ph ---
     final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon&countrycodes=ph&zoom=18&accept-language=en');
+        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon&zoom=18&accept-language=en');
+    // --- END MODIFIED ---
     developer.log('[HomeScreen] Nominatim Reverse URL: $url',
         name: 'HomeScreen');
 
     try {
       final response = await http.get(url, headers: {
-        'User-Agent': 'WeatherCompanionApp/2.0.0 (johnbalmedina30@gmail.com)'
+        'User-Agent': 'WeatherCompanionApp/2.0.2 (johnbalmedina30@gmail.com)'
       });
 
       if (response.statusCode == 200) {
@@ -426,21 +417,26 @@ class _HomeScreenState extends State<HomeScreen>
         developer.log('[HomeScreen] Nominatim Reverse Response: $data',
             name: 'HomeScreen');
 
-        String foundName = address['neighbourhood'] ??
-            address['suburb'] ??
-            address['village'] ??
+        // --- IMPROVED NAME FINDING LOGIC ---
+        String foundName = address['city'] ??
             address['town'] ??
-            address['city'] ??
+            address['village'] ??
+            address['suburb'] ??
+            address['neighbourhood'] ??
+            // Try county/state if city/town missing
+            address['county'] ??
+            address['state'] ??
+            // Use display name's first part as last resort
             data['display_name']?.split(',').first ??
             "Current Location";
 
-        if (address['city'] != null && foundName != address['city']) {
-          if (!foundName
-              .toLowerCase()
-              .contains(address['city'].toLowerCase())) {
-            foundName = '$foundName, ${address['city']}';
-          }
+        // Append country for international context
+        final String? country = address['country'];
+        if (country != null &&
+            !foundName.toLowerCase().contains(country.toLowerCase())) {
+          foundName = '$foundName, $country';
         }
+        // --- END IMPROVED LOGIC ---
 
         developer.log(
             '[HomeScreen] Nominatim Reverse success. Using name: $foundName',
@@ -459,144 +455,197 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // --- MODIFIED: Update State (Added Timezone Logging/Handling) ---
-  void _updateStateWithWeatherData(Map<String, dynamic> data,
-      {String? locationNameOverride}) {
-    if (!mounted) return;
-    developer.log('[HomeScreen] Updating UI state with weather data...',
-        name: 'HomeScreen');
+ // <-- MODIFIED HELPER FUNCTION TO USE AM/PM STRINGS -->
+ bool _calculateIsDay(
+     DateTime? localTime, String sunriseStrAMPM, String sunsetStrAMPM) {
+   if (localTime == null || sunriseStrAMPM == 'N/A' || sunsetStrAMPM == 'N/A') {
+     developer.log('[_calculateIsDay] localTime or sunrise/sunset missing, defaulting to day.',
+         name: 'HomeScreen');
+     return true; // Default to day if no time or astro data
+   }
 
-    final current = data['current'] ?? {};
-    final location = data['location'] ?? {};
-    final forecast = data['forecast']?['forecastday'] ?? [];
-    final todayForecast = (forecast.isNotEmpty) ? forecast[0] : null;
-    final todayAstro = todayForecast?['astro'] ?? {};
-    final todayDay = todayForecast?['day'] ?? {};
+   try {
+     // Parse sunrise/sunset strings (e.g., "06:01 AM", "05:45 PM") using h:mm a format
+     final DateFormat format = DateFormat('h:mm a');
+     DateTime sunrise = format.parseStrict(sunriseStrAMPM.trim());
+     DateTime sunset = format.parseStrict(sunsetStrAMPM.trim());
 
-    // <-- TIMEZONE HANDLING -->
-    final String apiTimezoneId =
-        location['tz_id'] ?? 'UTC'; // Get timezone from transformed data
-    final int apiUtcOffsetSeconds = location['utc_offset_seconds'] ?? 0;
-    final String localTimeString =
-        location['localtime'] ?? ""; // Use the estimated ISO string
-    developer.log(
-        '[HomeScreen] Time Update: API Timezone ID = $apiTimezoneId, Offset = $apiUtcOffsetSeconds s, Estimated Local ISO = $localTimeString',
-        name: 'HomeScreen');
+     // Create DateTime objects for today (using the localTime's date)
+     DateTime todaySunrise = DateTime(localTime.year, localTime.month,
+         localTime.day, sunrise.hour, sunrise.minute);
+     DateTime todaySunset = DateTime(localTime.year, localTime.month,
+         localTime.day, sunset.hour, sunset.minute);
 
-    String formattedLocalTime = "--:--";
-    DateTime? parsedLocalTime;
-    try {
-      if (localTimeString.isNotEmpty) {
-        // Parse the ISO string, treat it as local time
-        parsedLocalTime = DateTime.parse(localTimeString).toLocal();
-        formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
+     // The check: is the local time *after* sunrise AND *before* sunset?
+     bool isDay =
+         localTime.isAfter(todaySunrise) && localTime.isBefore(todaySunset);
+
+     developer.log(
+         '[_calculateIsDay] Check:'
+         '\n  Local Time: $localTime'
+         '\n  Sunrise: $todaySunrise (from "$sunriseStrAMPM")'
+         '\n  Sunset: $todaySunset (from "$sunsetStrAMPM")'
+         '\n  Result (isDay): $isDay',
+         name: 'HomeScreen');
+
+     return isDay;
+   } catch (e) {
+     developer.log(
+         '[_calculateIsDay] Error parsing AM/PM sunrise/sunset string: "$sunriseStrAMPM" or "$sunsetStrAMPM". Error: $e. Defaulting to day.',
+         name: 'HomeScreen',
+         error: e);
+     return true; // Default to day on parse error
+   }
+ }
+
+  // --- MODIFIED: Update State (Explicitly rebuild icon URL) ---
+ void _updateStateWithWeatherData(Map<String, dynamic> data,
+     {String? locationNameOverride}) {
+   if (!mounted) return;
+   developer.log('[HomeScreen] Updating UI state with weather data...',
+       name: 'HomeScreen');
+
+   // --- Extract Data (Keep this part) ---
+   final current = data['current'] ?? {};
+   final location = data['location'] ?? {};
+   final forecast = data['forecast']?['forecastday'] ?? [];
+   final todayForecast = (forecast.isNotEmpty) ? forecast[0] : null;
+   final todayAstro = todayForecast?['astro'] ?? {};
+   final todayDay = todayForecast?['day'] ?? {};
+
+   // Timezone Handling (Keep this part)
+   final String apiTimezoneId = location['tz_id'] ?? 'UTC';
+   final int apiUtcOffsetSeconds = location['utc_offset_seconds'] ?? 0;
+   final String localTimeString = location['localtime'] ?? "";
+   String formattedLocalTime = "--:--";
+   DateTime? parsedLocalTime;
+   try {
+     if (localTimeString.isNotEmpty) {
+       parsedLocalTime = DateTime.parse(localTimeString).toLocal();
+       formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
+     } else {
+       parsedLocalTime = DateTime.now();
+       formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
+     }
+   } catch (e) {
+     parsedLocalTime = DateTime.now();
+     formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
+   }
+
+   // Hourly Data Processing (Keep this part)
+   final List<dynamic> allHours =
+       (todayForecast != null && todayForecast['hour'] != null)
+           ? (todayForecast['hour'] as List)
+           : [];
+   final DateTime refTimeForHourly = parsedLocalTime ?? DateTime.now();
+   final List<dynamic> newForecastHours = allHours.where((hour) {
+     try {
+       DateTime hourTime = DateTime.tryParse(hour['time'] ?? "")?.toLocal() ??
+           refTimeForHourly;
+       return !hourTime
+           .isBefore(refTimeForHourly.subtract(const Duration(minutes: 30)));
+     } catch (e) { return false; }
+   }).toList();
+
+   // Other Weather Data (Keep this part)
+   final String newCityName =
+       locationNameOverride ?? location['name'] ?? cityName;
+   final double newTemp = (current['temp_c'] as num?)?.toDouble() ?? 0;
+   final String newDesc = current['condition']?['text'] ?? "";
+   // We'll rebuild the icon URL below
+   final String originalIconUrlFromService = current['condition']?['icon'] ?? "";
+   final int newHumidity = (current['humidity'] as num?)?.toInt() ?? 0;
+   final double newWindSpeed = (current['wind_kph'] as num?)?.toDouble() ?? 0;
+   final double newFeelsLike =
+       (current['feelslike_c'] as num?)?.toDouble() ?? 0;
+   final double newUvIndex = (current['uv'] as num?)?.toDouble() ?? 0;
+   final int newPrecipChance =
+       (todayDay['daily_chance_of_rain'] as num?)?.toInt() ?? 0;
+   final String newSunrise = todayAstro['sunrise'] ?? "N/A";
+   final String newSunset = todayAstro['sunset'] ?? "N/A";
+
+   // --- *** CORE FIX AREA *** ---
+   // 1. Calculate Day/Night Correctly
+   final bool newIsDay = _calculateIsDay(parsedLocalTime, newSunrise, newSunset);
+   developer.log(
+       '[HomeScreen] RE-CALCULATED Day/Night using local time and astro: Parsed as: $newIsDay',
+       name: 'HomeScreen');
+
+   // 2. Rebuild the Icon URL using the CORRECT isDay value
+   String correctedIconUrl = originalIconUrlFromService; // Start with the original
+   try {
+     // Example URL: https://openweathermap.org/img/wn/02d@2x.png
+     // We need to replace the 'd' or 'n' before @2x.png
+     RegExp regExp = RegExp(r"^(.*\/)(\d+[dn])(@2x\.png)$");
+     Match? match = regExp.firstMatch(originalIconUrlFromService);
+
+     if (match != null && match.groupCount == 3) {
+       String baseUrl = match.group(1)!; // e.g., "https://openweathermap.org/img/wn/"
+       String codeWithSuffix = match.group(2)!; // e.g., "02d"
+       String suffix = match.group(3)!; // e.g., "@2x.png"
+
+       // Extract the code (e.g., "02")
+       String code = codeWithSuffix.substring(0, codeWithSuffix.length - 1);
+       // Determine the correct day/night letter
+       String dayNightSuffix = newIsDay ? 'd' : 'n';
+
+       // Reconstruct the URL
+       correctedIconUrl = "$baseUrl$code$dayNightSuffix$suffix";
+       developer.log(
+           '[HomeScreen] Corrected Icon URL: Original="$originalIconUrlFromService", Corrected="$correctedIconUrl" based on isDay=$newIsDay',
+           name: 'HomeScreen');
+     } else {
         developer.log(
-            '[HomeScreen] Parsed local time: $parsedLocalTime, Formatted: $formattedLocalTime',
-            name: 'HomeScreen');
-      } else {
-        developer.log(
-            '[HomeScreen] Local time string empty. Falling back to device time.',
-            name: 'HomeScreen');
-        // Fallback to device time if API didn't provide it
-        parsedLocalTime = DateTime.now();
-        formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
-      }
-    } catch (e) {
-      developer.log(
-          '[HomeScreen] Error parsing local time string: $localTimeString. Error: $e. Falling back to device time.',
-          name: 'HomeScreen',
-          error: e);
-      // Fallback on error
-      parsedLocalTime = DateTime.now();
-      formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
-    }
-    // <-- END TIMEZONE HANDLING -->
+           '[HomeScreen] Could not parse original icon URL format: "$originalIconUrlFromService". Using it as is.',
+           name: 'HomeScreen');
+     }
+   } catch (e) {
+     developer.log('[HomeScreen] Error correcting icon URL: $e. Using original URL.', name: 'HomeScreen', error: e);
+     correctedIconUrl = originalIconUrlFromService; // Fallback
+   }
+   // --- *** END FIX AREA *** ---
 
-    // Hourly data processing
-    final List<dynamic> allHours =
-        (todayForecast != null && todayForecast['hour'] != null)
-            ? (todayForecast['hour'] as List)
-            : [];
-    // Use the parsed local time for filtering
-    final DateTime refTimeForHourly = parsedLocalTime ?? DateTime.now();
-    final List<dynamic> newForecastHours = allHours.where((hour) {
-      try {
-        DateTime hourTime = DateTime.tryParse(hour['time'] ?? "")?.toLocal() ??
-            refTimeForHourly;
-        return !hourTime
-            .isBefore(refTimeForHourly.subtract(const Duration(minutes: 30)));
-      } catch (e) {
-        developer.log(
-            '[HomeScreen] Error parsing hour time for filtering: ${hour['time']}. Error: $e',
-            name: 'HomeScreen');
-        return false;
-      }
-    }).toList();
 
-    // Use provided location name or the one from the transformed data
-    final String newCityName =
-        locationNameOverride ?? location['name'] ?? cityName;
+   setState(() {
+     // Set all state variables
+     cityName = newCityName;
+     temperature = newTemp;
+     weatherDescription = newDesc;
+     weatherIcon = correctedIconUrl; // <--- USE THE CORRECTED URL
+     humidity = newHumidity;
+     windSpeed = newWindSpeed;
+     feelsLikeTemp = newFeelsLike;
+     uvIndex = newUvIndex;
+     precipitationChance = newPrecipChance;
+     sunriseTime = newSunrise;
+     sunsetTime = newSunset;
+     localTime = formattedLocalTime;
+     timezoneId = apiTimezoneId;
+     forecastDays = forecast;
+     forecastHours = newForecastHours;
 
-    final double newTemp = (current['temp_c'] as num?)?.toDouble() ?? 0;
-    final String newDesc = current['condition']?['text'] ?? "";
-    final String newIcon = current['condition']?['icon'] ?? "";
-    final int newHumidity = (current['humidity'] as num?)?.toInt() ?? 0;
-    final double newWindSpeed = (current['wind_kph'] as num?)?.toDouble() ?? 0;
+     if (_cityController.text != newCityName &&
+         !newCityName.startsWith('Lat:')) {
+       _cityController.text = newCityName;
+     }
 
-    // --- MODIFIED: Use _lastLat and _lastLon ---
-    final double? newLat = _lastLat;
-    final double? newLon = _lastLon;
-    // --- END MODIFIED ---
+     _isLoading = false;
+     _errorMessage = null;
 
-    final double newFeelsLike =
-        (current['feelslike_c'] as num?)?.toDouble() ?? 0;
-    final double newUvIndex = (current['uv'] as num?)?.toDouble() ?? 0;
+     _isDay = newIsDay; // Save the CORRECT day/night state
+     _currentAnimation = _getWeatherAnimation(
+         newDesc, _isDay); // Pass description and CORRECT isDay
+     _isContentLoaded = true;
 
-    final int newPrecipChance =
-        (todayDay['daily_chance_of_rain'] as num?)?.toInt() ?? 0;
-    final String newSunrise =
-        todayAstro['sunrise'] ?? "N/A"; // Already formatted HH:MM
-    final String newSunset =
-        todayAstro['sunset'] ?? "N/A"; // Already formatted HH:MM
-
-    setState(() {
-      cityName = newCityName;
-      temperature = newTemp;
-      weatherDescription = newDesc;
-      weatherIcon = newIcon;
-      humidity = newHumidity;
-      windSpeed = newWindSpeed;
-      feelsLikeTemp = newFeelsLike;
-      uvIndex = newUvIndex;
-      precipitationChance = newPrecipChance;
-      sunriseTime = newSunrise;
-      sunsetTime = newSunset;
-      localTime = formattedLocalTime; // Update state with formatted time
-      timezoneId = apiTimezoneId; // <-- Store timezone ID
-      forecastDays = forecast;
-      forecastHours = newForecastHours;
-      // _lastLat and _lastLon are already set in _fetchData
-      // _lastLat = newLat; // No need to set them again here
-      // _lastLon = newLon;
-
-      if (_cityController.text != newCityName &&
-          !newCityName.startsWith('Lat:')) {
-        _cityController.text = newCityName;
-      }
-
-      _isLoading = false;
-      _errorMessage = null;
-
-      if (_animationsReady && !_animationController.isAnimating) {
-        _animationController.repeat(reverse: true);
-        developer.log('[HomeScreen] Starting animations.', name: 'HomeScreen');
-      }
-    });
-    developer.log('[HomeScreen] Weather UI state updated.', name: 'HomeScreen');
-  }
+     if (_animationsReady && !_animationController.isAnimating) {
+       _animationController.repeat(reverse: true);
+       developer.log('[HomeScreen] Starting animations.', name: 'HomeScreen');
+     }
+   });
+   developer.log('[HomeScreen] Weather UI state updated.', name: 'HomeScreen');
+ }
 
   // --- Fetch AI Greeting ---
-  // ✅ MODIFIED TO PASS FORECAST DATA
   Future<void> _fetchAiGreeting(Map<String, dynamic> weatherData,
       {String? locationNameOverride}) async {
     if (!mounted) return;
@@ -606,13 +655,11 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       final location = weatherData['location'];
       final current = weatherData['current'];
-      // ✅ GET FORECAST DAYS FROM THE ALREADY TRANSFORMED DATA
       final forecast = weatherData['forecast']?['forecastday'] ?? [];
       final String localTimeString = location['localtime'] ?? "";
       DateTime currentTime;
       try {
-        currentTime =
-            DateTime.parse(localTimeString).toLocal(); // Ensure it's local
+        currentTime = DateTime.parse(localTimeString).toLocal();
       } catch (e) {
         developer.log(
             '[HomeScreen] Error parsing greeting time: $e. Using DateTime.now().',
@@ -628,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen>
         nameForAI,
         (current['temp_c'] as num?)?.toDouble() ?? 0,
         currentTime,
-        forecast, // ✅ PASS THE FORECAST DAYS HERE
+        forecast,
       );
 
       if (mounted) {
@@ -653,7 +700,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- Try Get Current Device Location ---
   Future<Position?> _tryGetCurrentDeviceLocation() async {
-    // ... (rest of the function is the same) ...
     developer.log(
         '[HomeScreen] Map Button: Trying to get current device location...',
         name: 'HomeScreen');
@@ -670,20 +716,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- Month Name ---
   String _monthName(int month) {
-    // ... (rest of the function is the same) ...
     const months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec"
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     ];
     if (month >= 1 && month <= 12) return months[month - 1];
     return "???";
@@ -691,7 +726,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- Show Error Snackbar ---
   void _showErrorSnackbar(String message) {
-    // ... (rest of the function is the same) ...
     if (mounted) {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -700,10 +734,175 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  // --- Get Weather Animation (Day/Night Logic) ---
+  String _getWeatherAnimation(String description, bool isDay) {
+    String desc = description.toLowerCase();
+
+    if (isDay) {
+      // --- DAY ANIMATIONS ---
+      if (desc.contains('thunder') || desc.contains('storm')) {
+        return 'assets/animations/day_thunderstorm.json';
+      }
+      if (desc.contains('rain') || desc.contains('drizzle')) {
+        return 'assets/animations/day_rain.json';
+      }
+      if (desc.contains('wind') || desc.contains('squalls')) {
+        return 'assets/animations/day_windy.json';
+      }
+      if (desc.contains('snow') || desc.contains('sleet')) {
+        return 'assets/animations/day_snow.json';
+      }
+      if (desc.contains('cloud') ||
+          desc.contains('overcast') ||
+          desc.contains('fog') ||
+          desc.contains('mist')) {
+        return 'assets/animations/day_clouds.json';
+      }
+      if (desc.contains('sun') || desc.contains('clear')) {
+        return 'assets/animations/day_flare.json'; // Your "flare"
+      }
+      // Fallback for day
+      return 'assets/animations/day_flare.json';
+    } else {
+      // --- NIGHT ANIMATIONS ---
+      if (desc.contains('thunder') || desc.contains('storm')) {
+        return 'assets/animations/night_thunderstorm.json';
+      }
+      if (desc.contains('rain') || desc.contains('drizzle')) {
+        return 'assets/animations/night_rain.json';
+      }
+      if (desc.contains('wind') || desc.contains('squalls')) {
+        return 'assets/animations/night_windy.json';
+      }
+      if (desc.contains('snow') || desc.contains('sleet')) {
+        return 'assets/animations/night_snow.json';
+      }
+      if (desc.contains('cloud') ||
+          desc.contains('overcast') ||
+          desc.contains('fog') ||
+          desc.contains('mist')) {
+        return 'assets/animations/night_clouds.json';
+      }
+      if (desc.contains('clear')) {
+        return 'assets/animations/night_cloudless.json'; // Your "cloudless"
+      }
+      // Fallback for night
+      return 'assets/animations/night_cloudless.json';
+    }
+  }
+
+  // --- Get Background Gradient (Day/Night Logic) ---
+  LinearGradient _getBackgroundGradient(String description, bool isDay) {
+    ThemeData theme = Theme.of(context);
+    String desc = description.toLowerCase();
+
+    // Opacity is kept so the Lottie animation shows through
+    if (isDay) {
+      // --- DAY GRADIENTS ---
+      if (desc.contains('rain') ||
+          desc.contains('drizzle') ||
+          desc.contains('thunderstorm')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.blueGrey.withOpacity(0.8),
+            Colors.indigo.withOpacity(0.9)
+          ],
+        );
+      } else if (desc.contains('sun') ||
+          desc.contains('clear') ||
+          desc.contains('windy')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.orange.shade300.withOpacity(0.7),
+            Colors.lightBlue.shade300.withOpacity(0.8)
+          ],
+        );
+      } else if (desc.contains('cloud') ||
+          desc.contains('overcast') ||
+          desc.contains('fog') ||
+          desc.contains('mist')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.grey.shade400.withOpacity(0.8),
+            Colors.blueGrey.shade400.withOpacity(0.9)
+          ],
+        );
+      } else if (desc.contains('snow') || desc.contains('sleet')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.lightBlue.shade100.withOpacity(0.8),
+            Colors.grey.shade300.withOpacity(0.9)
+          ],
+        );
+      }
+    } else {
+      // --- NIGHT GRADIENTS ---
+      if (desc.contains('rain') ||
+          desc.contains('drizzle') ||
+          desc.contains('thunderstorm')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.indigo.shade900.withOpacity(0.8),
+            Colors.black.withOpacity(0.9)
+          ],
+        );
+      } else if (desc.contains('clear') || desc.contains('windy')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.8),
+            Colors.indigo.shade900.withOpacity(0.9)
+          ],
+        );
+      } else if (desc.contains('cloud') ||
+          desc.contains('overcast') ||
+          desc.contains('fog') ||
+          desc.contains('mist')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.blueGrey.shade900.withOpacity(0.8),
+            Colors.black.withOpacity(0.9)
+          ],
+        );
+      } else if (desc.contains('snow') || desc.contains('sleet')) {
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.grey.shade800.withOpacity(0.8),
+            Colors.black.withOpacity(0.9)
+          ],
+        );
+      }
+    }
+
+    // Default fallback gradient
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        theme.scaffoldBackgroundColor.withOpacity(0.7),
+        theme.primaryColor.withOpacity(0.8)
+      ],
+    );
+  }
+
   // --- WIDGET BUILD (THEME AWARE) ---
   @override
   Widget build(BuildContext context) {
-    // Get the current theme from the context
     final theme = Theme.of(context);
 
     final now = DateTime.now();
@@ -715,76 +914,96 @@ class _HomeScreenState extends State<HomeScreen>
     final windUnit = _currentWindUnit ?? WindSpeedUnit.kph;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor, // THEME AWARE
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            // --- MODIFIED: Refresh logic ---
-            developer.log('[HomeScreen] Pull-to-refresh triggered.',
-                name: 'HomeScreen');
-            // Check if a city is entered in the search bar
-            if (_cityController.text.isNotEmpty) {
-              await _fetchData(cityQueryOverride: _cityController.text);
-            } else {
-              // No city in search bar, check for default
-              final String? defaultLocation =
-                  await _settingsService.getDefaultLocation();
-              if (defaultLocation != null && defaultLocation.isNotEmpty) {
-                // Refresh default location
-                await _fetchData(cityQueryOverride: defaultLocation);
-              } else {
-                // No default, refresh current location
-                await _fetchData(useCurrentLocation: true);
-              }
-            }
-            // --- END MODIFIED ---
-          },
-          color: theme.colorScheme.primary, // THEME AWARE
-          backgroundColor: theme.appBarTheme.backgroundColor, // THEME AWARE
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(bottom: 130),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: 20),
-                      _buildSearchBar(),
-                      const SizedBox(height: 25),
-                      _buildBodyContent(formattedToday, tempUnit, windUnit),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
-                ),
-              ),
-              Visibility(
-                visible: !isKeyboardOpen,
-                child: Positioned(
-                  bottom: 5,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Text(
-                      "Weather Data: Open-Meteo.com | Geocoding: OpenStreetMap Nominatim",
-                      style: TextStyle(
-                          color: theme.colorScheme.onBackground
-                              .withOpacity(0.5), // THEME AWARE
-                          fontSize: 8,
-                          fontStyle: FontStyle.italic),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          // Layer 1: Lottie Animation
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 1500),
+            child: Lottie.asset(
+              _currentAnimation,
+              key: ValueKey<String>(_currentAnimation),
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+
+          // Layer 2: Gradient Overlay
+          AnimatedContainer(
+            duration: const Duration(seconds: 1),
+            decoration: BoxDecoration(
+              gradient: _getBackgroundGradient(weatherDescription, _isDay),
+            ),
+          ),
+
+          // Layer 3: Your Original Content
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                developer.log('[HomeScreen] Pull-to-refresh triggered.',
+                    name: 'HomeScreen');
+                if (_cityController.text.isNotEmpty) {
+                  await _fetchData(cityQueryOverride: _cityController.text);
+                } else {
+                  final String? defaultLocation =
+                      await _settingsService.getDefaultLocation();
+                  if (defaultLocation != null && defaultLocation.isNotEmpty) {
+                    await _fetchData(cityQueryOverride: defaultLocation);
+                  } else {
+                    await _fetchData(useCurrentLocation: true);
+                  }
+                }
+              },
+              color: theme.colorScheme.primary,
+              backgroundColor: theme.appBarTheme.backgroundColor,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 20),
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 130),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildHeader(),
+                          const SizedBox(height: 20),
+                          _buildSearchBar(),
+                          const SizedBox(height: 25),
+                          _buildBodyContent(
+                              formattedToday, tempUnit, windUnit),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  Visibility(
+                    visible: !isKeyboardOpen,
+                    child: Positioned(
+                      bottom: 5,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Text(
+                          "Weather Data: Open-Meteo.com | Geocoding: OpenStreetMap Nominatim",
+                          style: TextStyle(
+                              color: theme.colorScheme.onBackground
+                                  .withOpacity(0.5),
+                              fontSize: 8,
+                              fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_animationsReady && !isKeyboardOpen) _buildMapButton(),
+                ],
               ),
-              if (_animationsReady && !isKeyboardOpen) _buildMapButton(),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton:
@@ -804,9 +1023,8 @@ class _HomeScreenState extends State<HomeScreen>
             errorBuilder: (_, __, ___) => const SizedBox.shrink()),
         const SizedBox(width: 8),
         Text(
-          "WeatherCompanion v2.0.0",
+          "WeatherCompanion v2.0.2", // Bumped version for clarity
           style: theme.textTheme.titleMedium?.copyWith(
-            // THEME AWARE
             fontWeight: FontWeight.bold,
             letterSpacing: 1,
           ),
@@ -823,20 +1041,19 @@ class _HomeScreenState extends State<HomeScreen>
         Expanded(
           child: TextField(
             controller: _cityController,
-            style: theme.textTheme.bodyLarge, // THEME AWARE (text color)
+            style: theme.textTheme.bodyLarge,
             decoration: InputDecoration(
-              hintText: "Enter city name",
+              hintText: "Enter city name (any country)", // Updated hint
               hintStyle: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer
-                    .withOpacity(0.7), // THEME AWARE
+                color: theme.colorScheme.onSecondaryContainer.withOpacity(0.7),
               ),
               filled: true,
-              fillColor: theme.colorScheme.secondaryContainer, // THEME AWARE
+              fillColor: theme.colorScheme.secondaryContainer,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none),
               prefixIcon: Icon(Icons.search,
-                  color: theme.colorScheme.onSecondaryContainer), // THEME AWARE
+                  color: theme.colorScheme.onSecondaryContainer),
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
               isDense: true,
@@ -850,7 +1067,7 @@ class _HomeScreenState extends State<HomeScreen>
         const SizedBox(width: 5),
         IconButton(
           icon: Icon(Icons.my_location,
-              color: theme.iconTheme.color, size: 24), // THEME AWARE
+              color: theme.iconTheme.color, size: 24),
           onPressed: () async {
             FocusScope.of(context).unfocus();
             _cityController.clear();
@@ -860,18 +1077,15 @@ class _HomeScreenState extends State<HomeScreen>
           visualDensity: VisualDensity.compact,
         ),
         IconButton(
-          icon: Icon(Icons.refresh,
-              color: theme.iconTheme.color, size: 24), // THEME AWARE
+          icon: Icon(Icons.refresh, color: theme.iconTheme.color, size: 24),
           onPressed: () {
             FocusScope.of(context).unfocus();
-            // --- MODIFIED: Refresh button logic ---
             _fetchData(
                 cityQueryOverride: _cityController.text.isNotEmpty
                     ? _cityController.text
                     : null,
                 useCurrentLocation:
                     _cityController.text.isEmpty && _lastLat == null);
-            // --- END MODIFIED ---
           },
           tooltip: "Refresh",
           visualDensity: VisualDensity.compact,
@@ -884,13 +1098,15 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildBodyContent(
       String formattedToday, TemperatureUnit tempUnit, WindSpeedUnit windUnit) {
     final theme = Theme.of(context);
+
     if (_isLoading) {
       return SizedBox(
           height: 400,
           child: Center(
               child: CircularProgressIndicator(
-                  color: theme.colorScheme.primary))); // THEME AWARE
+                  color: theme.colorScheme.primary)));
     }
+
     if (_errorMessage != null) {
       return Container(
         height: 400,
@@ -900,13 +1116,12 @@ class _HomeScreenState extends State<HomeScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.error_outline,
-                color: Colors.redAccent, size: 40), // Error color is fine
+                color: Colors.redAccent, size: 40),
             const SizedBox(height: 15),
             Text(
               _errorMessage!,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(
-                // THEME AWARE
                 color: theme.textTheme.bodyLarge?.color?.withOpacity(0.7),
               ),
             ),
@@ -916,7 +1131,6 @@ class _HomeScreenState extends State<HomeScreen>
                   cityQueryOverride: _cityController.text.isNotEmpty
                       ? _cityController.text
                       : null,
-                  // --- MODIFIED: Check _lastLat as well ---
                   useCurrentLocation:
                       _cityController.text.isEmpty && _lastLat == null),
               child: const Text('Try Again'),
@@ -926,54 +1140,57 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
-    // --- Main Content Display ---
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          cityName,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.bold), // THEME AWARE
-        ),
-        const SizedBox(height: 10),
-        WeatherCard(
-          displayTemperature: tempUnit == TemperatureUnit.celsius
-              ? temperature
-              : _settingsService.toFahrenheit(temperature),
-          tempUnitSymbol: tempUnit == TemperatureUnit.celsius ? 'C' : 'F',
-          icon: weatherIcon,
-          description: weatherDescription,
-          date: formattedToday,
-          localTime: localTime, // Passes the state variable
-          humidity: humidity,
-          displayWindSpeed: windUnit == WindSpeedUnit.kph
-              ? windSpeed
-              : _settingsService.toMph(windSpeed),
-          windUnitSymbol: windUnit == WindSpeedUnit.kph ? 'kph' : 'mph',
-          feelsLikeTemp: tempUnit == TemperatureUnit.celsius
-              ? feelsLikeTemp
-              : _settingsService.toFahrenheit(feelsLikeTemp),
-          uvIndex: uvIndex,
-          precipitationChance: precipitationChance,
-          sunriseTime: sunriseTime,
-          sunsetTime: sunsetTime,
-        ),
-        const SizedBox(height: 25),
-        _buildAiGreeting(),
-        if (_greetingLoading || _aiGreeting.isNotEmpty)
+    return AnimatedOpacity(
+      opacity: _isContentLoaded ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 700),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            cityName,
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          WeatherCard(
+            displayTemperature: tempUnit == TemperatureUnit.celsius
+                ? temperature
+                : _settingsService.toFahrenheit(temperature),
+            tempUnitSymbol: tempUnit == TemperatureUnit.celsius ? 'C' : 'F',
+            icon: weatherIcon,
+            description: weatherDescription,
+            date: formattedToday,
+            localTime: localTime,
+            humidity: humidity,
+            displayWindSpeed: windUnit == WindSpeedUnit.kph
+                ? windSpeed
+                : _settingsService.toMph(windSpeed),
+            windUnitSymbol: windUnit == WindSpeedUnit.kph ? 'kph' : 'mph',
+            feelsLikeTemp: tempUnit == TemperatureUnit.celsius
+                ? feelsLikeTemp
+                : _settingsService.toFahrenheit(feelsLikeTemp),
+            uvIndex: uvIndex,
+            precipitationChance: precipitationChance,
+            sunriseTime: sunriseTime,
+            sunsetTime: sunsetTime,
+          ),
           const SizedBox(height: 25),
-        if (forecastHours.isNotEmpty) _buildHourlyForecast(tempUnit),
-        if (forecastHours.isNotEmpty) const SizedBox(height: 25),
-        if (forecastDays.length >= 1) _buildDailyForecast(tempUnit, windUnit),
-        if (forecastDays.length >= 1) const SizedBox(height: 25),
-        AiAssistantWidget(
-          cityName: cityName,
-          temperature: temperature,
-          weatherDescription: weatherDescription,
-          forecastDays: forecastDays,
-          isLoading: _isLoading,
-        ),
-      ],
+          _buildAiGreeting(),
+          if (_greetingLoading || _aiGreeting.isNotEmpty)
+            const SizedBox(height: 25),
+          if (forecastHours.isNotEmpty) _buildHourlyForecast(tempUnit),
+          if (forecastHours.isNotEmpty) const SizedBox(height: 25),
+          if (forecastDays.length >= 1) _buildDailyForecast(tempUnit, windUnit),
+          if (forecastDays.length >= 1) const SizedBox(height: 25),
+          AiAssistantWidget(
+            cityName: cityName,
+            temperature: temperature,
+            weatherDescription: weatherDescription,
+            forecastDays: forecastDays,
+            isLoading: _isLoading,
+          ),
+        ],
+      ),
     );
   }
 
@@ -985,19 +1202,17 @@ class _HomeScreenState extends State<HomeScreen>
           child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 20.0),
               child: CircularProgressIndicator(
-                  color: theme.colorScheme.primary,
-                  strokeWidth: 2.0))); // THEME AWARE
+                  color: theme.colorScheme.primary, strokeWidth: 2.0)));
     }
     if (_aiGreeting.isNotEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         decoration: BoxDecoration(
-          color: theme.cardColor, // THEME AWARE
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-              color:
-                  theme.colorScheme.onSurface.withOpacity(0.2)), // THEME AWARE
+              color: theme.colorScheme.onSurface.withOpacity(0.2)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1008,7 +1223,6 @@ class _HomeScreenState extends State<HomeScreen>
               _aiGreeting,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                // THEME AWARE
                 fontStyle: FontStyle.italic,
                 height: 1.4,
               ),
@@ -1053,11 +1267,11 @@ class _HomeScreenState extends State<HomeScreen>
             decoration: BoxDecoration(
               color: isNow
                   ? theme.colorScheme.primary.withOpacity(0.3)
-                  : theme.cardColor, // THEME AWARE
+                  : theme.cardColor,
               borderRadius: BorderRadius.circular(12),
               border: isNow
                   ? Border.all(color: theme.colorScheme.primary, width: 0.5)
-                  : null, // THEME AWARE
+                  : null,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1065,7 +1279,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Text(
                   isNow ? "Now" : formattedTime,
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600), // THEME AWARE
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 5),
                 WeatherIconImage(iconUrl: iconUrl, size: 35.0),
@@ -1074,7 +1288,7 @@ class _HomeScreenState extends State<HomeScreen>
                   tempUnit == TemperatureUnit.celsius
                       ? "${tempC.round()}°"
                       : "${_settingsService.toFahrenheit(tempC).round()}°",
-                  style: theme.textTheme.bodyLarge, // THEME AWARE
+                  style: theme.textTheme.bodyLarge,
                 ),
               ],
             ),
@@ -1119,8 +1333,7 @@ class _HomeScreenState extends State<HomeScreen>
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                backgroundColor:
-                    Colors.transparent, // Sheet itself defines color
+                backgroundColor: Colors.transparent,
                 builder: (context) => ForecastDetailSheet(
                   dayData: day,
                   tempUnit: tempUnit,
@@ -1134,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen>
               margin: const EdgeInsets.only(right: 10),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: theme.cardColor, // THEME AWARE
+                color: theme.cardColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1143,14 +1356,14 @@ class _HomeScreenState extends State<HomeScreen>
                   Text(
                     formattedDate,
                     style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600), // THEME AWARE
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 5),
                   WeatherIconImage(iconUrl: forecastIconUrl, size: 40.0),
                   const SizedBox(height: 5),
                   Text(
                     "$displayMin$tempSymbol / $displayMax$tempSymbol",
-                    style: theme.textTheme.bodyMedium, // THEME AWARE
+                    style: theme.textTheme.bodyMedium,
                   ),
                   Text(
                     condition,
@@ -1158,7 +1371,6 @@ class _HomeScreenState extends State<HomeScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      // THEME AWARE
                       color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
                     ),
                   ),
@@ -1185,8 +1397,7 @@ class _HomeScreenState extends State<HomeScreen>
             offset: Offset(0, -_bounceAnimation.value), child: child),
         child: FloatingActionButton(
           heroTag: "map_fab",
-          backgroundColor:
-              theme.colorScheme.surface.withOpacity(0.25), // THEME AWARE
+          backgroundColor: theme.colorScheme.surface.withOpacity(0.25),
           elevation: 4.0,
           mini: true,
           onPressed: () async {
@@ -1227,14 +1438,14 @@ class _HomeScreenState extends State<HomeScreen>
             }
 
             Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        MapScreen(center: centerPoint, title: mapTitle)));
+              context,
+              FadeRoute( // Using FadeRoute
+                page: MapScreen(center: centerPoint, title: mapTitle),
+              ),
+            );
           },
           tooltip: 'Open Map',
-          child: Icon(Icons.map,
-              color: theme.colorScheme.primary, size: 24), // THEME AWARE
+          child: Icon(Icons.map, color: theme.colorScheme.primary, size: 24),
         ),
       ),
     );
@@ -1252,8 +1463,10 @@ class _HomeScreenState extends State<HomeScreen>
         onPressed: () async {
           FocusScope.of(context).unfocus();
 
-          final result = await Navigator.push(context,
-              MaterialPageRoute(builder: (context) => const SettingsScreen()));
+          final result = await Navigator.push(
+            context,
+            FadeRoute(page: const SettingsScreen()), // Using FadeRoute
+          );
 
           developer.log('[HomeScreen] Returned from Settings. Result: $result',
               name: 'HomeScreen');
@@ -1268,10 +1481,6 @@ class _HomeScreenState extends State<HomeScreen>
             developer.log(
                 '[HomeScreen] No specific city selected OR units changed. Refreshing current view...',
                 name: 'HomeScreen');
-            // --- MODIFIED: Refresh logic after settings close ---
-            // If a city is in the controller, refresh that.
-            // Otherwise, check for a default.
-            // Otherwise, use current location.
             if (_cityController.text.isNotEmpty) {
               await _fetchData(cityQueryOverride: _cityController.text);
             } else {
@@ -1283,16 +1492,27 @@ class _HomeScreenState extends State<HomeScreen>
                 await _fetchData(useCurrentLocation: true);
               }
             }
-            // --- END MODIFIED ---
           }
         },
-        backgroundColor:
-            theme.colorScheme.surface.withOpacity(0.25), // THEME AWARE
+        backgroundColor: theme.colorScheme.surface.withOpacity(0.25),
         elevation: 6.0,
         tooltip: 'Settings',
-        child: Icon(Icons.settings,
-            color: theme.colorScheme.primary, size: 24), // THEME AWARE
+        child:
+            Icon(Icons.settings, color: theme.colorScheme.primary, size: 24),
       ),
     );
   }
-} // End of _HomeScreenState
+}
+
+// Helper class for Fade Transitions
+class FadeRoute extends PageRouteBuilder {
+  final Widget page;
+  FadeRoute({required this.page})
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => page,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: const Duration(milliseconds: 400),
+        );
+}
