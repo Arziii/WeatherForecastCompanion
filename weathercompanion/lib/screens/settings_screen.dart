@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:weathercompanion/services/settings_service.dart';
-import 'package:weathercompanion/services/theme_service.dart'; // Import ThemeService
+import 'package:weathercompanion/services/theme_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -19,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   TemperatureUnit _currentTempUnit = TemperatureUnit.celsius;
   WindSpeedUnit _currentWindUnit = WindSpeedUnit.kph;
   List<String> _savedLocations = [];
+  String? _defaultLocation;
   bool _isLoading = true;
 
   @override
@@ -36,10 +37,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Load all settings from the service
   Future<void> _loadAllSettings() async {
     setState(() => _isLoading = true);
-    // No need to load theme here, provider handles it
     _currentTempUnit = await _settingsService.getTemperatureUnit();
     _currentWindUnit = await _settingsService.getWindSpeedUnit();
     _savedLocations = await _settingsService.getSavedLocations();
+    _defaultLocation = await _settingsService.getDefaultLocation();
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -50,28 +51,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_cityAddController.text.isEmpty) return;
 
     final String newCity = _cityAddController.text;
-    FocusScope.of(context).unfocus(); // Hide keyboard
+    FocusScope.of(context).unfocus();
     _cityAddController.clear();
 
     await _settingsService.addSavedLocation(newCity);
-    _loadAllSettings(); // Reload settings and locations
+    _loadAllSettings();
   }
 
   /// Delete a location and refresh the list
   Future<void> _deleteLocation(String cityName) async {
     await _settingsService.deleteSavedLocation(cityName);
-    _loadAllSettings(); // Reload settings and locations
+    _loadAllSettings();
   }
 
-  /// Save the unit settings
+  // --- Set a location as the default (Theme-Aware Snackbar) ---
+  Future<void> _setDefaultLocation(String cityName) async {
+    final theme = Theme.of(context);
+    String? newDefault;
+
+    if (_defaultLocation == cityName) {
+      await _settingsService.clearDefaultLocation();
+      newDefault = null;
+    } else {
+      await _settingsService.setDefaultLocation(cityName);
+      newDefault = cityName;
+    }
+
+    if (mounted) {
+      setState(() {
+        _defaultLocation = newDefault;
+      });
+
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newDefault == null
+                ? "Default location cleared."
+                : "$newDefault set as default location.",
+            style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
+          ),
+          backgroundColor: theme.colorScheme.primaryContainer,
+        ),
+      );
+    }
+  }
+
+  // --- Save the unit settings (Theme-Aware Snackbar) ---
   Future<void> _saveUnits() async {
+    final theme = Theme.of(context);
     await _settingsService.setTemperatureUnit(_currentTempUnit);
     await _settingsService.setWindSpeedUnit(_currentWindUnit);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Units saved!"),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Text(
+            "Units saved!",
+            style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
+          ),
+          backgroundColor: theme.colorScheme.primaryContainer,
         ),
       );
     }
@@ -80,31 +118,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Pop screen and send the selected city back to HomeScreen
   void _loadWeatherForCity(String cityName) {
-    Navigator.pop(context, cityName); // Send the city name back
+    Navigator.pop(context, cityName);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get ThemeService from provider
     final themeService = Provider.of<ThemeService>(context);
-    final theme = Theme.of(context); // Get the current theme
+    final theme = Theme.of(context);
+    final isDarkMode =
+        theme.brightness == Brightness.dark; // <-- Check theme mode
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor, // THEME AWARE
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Settings & Locations'),
-        backgroundColor: theme.appBarTheme.backgroundColor, // THEME AWARE
-        foregroundColor: theme.appBarTheme.foregroundColor, // THEME AWARE
+        backgroundColor: theme.appBarTheme.backgroundColor,
+        foregroundColor: theme.appBarTheme.foregroundColor,
       ),
       body: _isLoading
           ? Center(
               child:
                   CircularProgressIndicator(color: theme.colorScheme.primary))
           : ListView(
-              // Use ListView for scrolling
               padding: const EdgeInsets.all(16.0),
               children: [
-                // --- NEW: App Theme Settings ---
+                // --- App Theme Settings ---
                 Text(
                   'App Theme',
                   style: theme.textTheme.titleLarge?.copyWith(
@@ -113,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Card(
-                  color: theme.cardColor, // THEME AWARE
+                  color: theme.cardColor,
                   elevation: 2.0,
                   child: Padding(
                     padding: const EdgeInsets.all(12.0),
@@ -162,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Card(
-                  color: theme.cardColor, // THEME AWARE
+                  color: theme.cardColor,
                   elevation: 2.0,
                   child: Padding(
                     padding: const EdgeInsets.all(12.0),
@@ -215,10 +253,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            child: Text('Save Units',
-                                style: TextStyle(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.bold)),
+                            // --- MODIFIED: TextButton Color ---
+                            child: Text(
+                              'Save Units',
+                              style: TextStyle(
+                                  color: isDarkMode
+                                      ? theme.colorScheme
+                                          .onSurface // White in dark mode
+                                      : theme.colorScheme
+                                          .primary, // Blue in light mode
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            // --- END MODIFIED ---
                             onPressed: _saveUnits,
                           ),
                         )
@@ -237,7 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Card(
-                  color: theme.cardColor, // THEME AWARE
+                  color: theme.cardColor,
                   elevation: 2.0,
                   child: Padding(
                     padding: const EdgeInsets.all(12.0),
@@ -272,9 +318,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: Icon(Icons.add_circle,
-                                  color:
-                                      theme.colorScheme.primary), // THEME AWARE
+                              // --- MODIFIED: IconButton Color ---
+                              icon: Icon(
+                                Icons.add_circle,
+                                color: isDarkMode
+                                    ? theme.colorScheme
+                                        .onSurface // White in dark mode
+                                    : theme.colorScheme
+                                        .primary, // Blue in light mode
+                              ),
+                              // --- END MODIFIED ---
                               onPressed: _addLocation,
                               tooltip: 'Add Location',
                             )
@@ -288,13 +341,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (_savedLocations.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 20.0),
-                            child: Text(
-                              "No locations saved yet.",
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.textTheme.bodyMedium?.color
-                                    ?.withOpacity(0.7),
-                                fontStyle: FontStyle.italic,
-                              ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  "No locations saved yet.",
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.textTheme.bodyMedium?.color
+                                        ?.withOpacity(0.7),
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Tap the star to set a default location.",
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.textTheme.bodySmall?.color
+                                        ?.withOpacity(0.5),
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
                             ),
                           )
                         else
@@ -304,7 +370,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             itemCount: _savedLocations.length,
                             itemBuilder: (context, index) {
                               final location = _savedLocations[index];
+                              final bool isDefault =
+                                  _defaultLocation == location;
+
                               return ListTile(
+                                leading: IconButton(
+                                  icon: Icon(
+                                    isDefault ? Icons.star : Icons.star_border,
+                                    color: isDefault
+                                        ? theme.colorScheme.primary
+                                        : theme.iconTheme.color
+                                            ?.withOpacity(0.6),
+                                  ),
+                                  onPressed: () =>
+                                      _setDefaultLocation(location),
+                                  tooltip: 'Set as Default Location',
+                                ),
                                 title: Text(location,
                                     style: theme.textTheme.bodyLarge?.copyWith(
                                         fontWeight: FontWeight.w500)),
@@ -314,10 +395,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   onPressed: () => _deleteLocation(location),
                                   tooltip: 'Delete Location',
                                 ),
-                                onTap: () => _loadWeatherForCity(
-                                    location), // Tap to load weather
+                                onTap: () => _loadWeatherForCity(location),
                                 contentPadding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
+                                    const EdgeInsets.symmetric(horizontal: 0),
                                 dense: true,
                               );
                             },

@@ -98,15 +98,35 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  // --- MODIFIED: Load settings and check for default location ---
   Future<void> _loadSettingsAndInitialData() async {
     developer.log('[HomeScreen] Post-frame: Loading settings...',
         name: 'HomeScreen');
     try {
       await _loadSettings();
-      developer.log('[HomeScreen] Settings loaded. Fetching initial data...',
+      developer.log(
+          '[HomeScreen] Settings loaded. Checking for default location...',
           name: 'HomeScreen');
-      // Use current location for initial load
-      await _fetchData(useCurrentLocation: true, isInitialLoad: true);
+
+      // --- NEW: Check for a default location ---
+      final String? defaultLocation =
+          await _settingsService.getDefaultLocation();
+
+      if (defaultLocation != null && defaultLocation.isNotEmpty) {
+        developer.log(
+            '[HomeScreen] Default location found: $defaultLocation. Fetching data for default.',
+            name: 'HomeScreen');
+        // Load weather for the default location
+        await _fetchData(
+            cityQueryOverride: defaultLocation, isInitialLoad: true);
+      } else {
+        developer.log(
+            '[HomeScreen] No default location. Fetching initial data for current location.',
+            name: 'HomeScreen');
+        // Use current location for initial load (original behavior)
+        await _fetchData(useCurrentLocation: true, isInitialLoad: true);
+      }
+      // --- END NEW ---
     } catch (e) {
       developer.log('[HomeScreen] Error during initial load sequence: $e',
           name: 'HomeScreen', error: e);
@@ -119,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }
   }
+  // --- END MODIFIED ---
 
   Future<void> _loadSettings() async {
     try {
@@ -177,8 +198,12 @@ class _HomeScreenState extends State<HomeScreen>
 
     try {
       // 1. Determine Coordinates & Location Name
+      // --- MODIFIED: Ensure cityQueryOverride is prioritized even if _cityController is empty ---
       if (useCurrentLocation ||
-          (cityQueryOverride == null && _cityController.text.isEmpty)) {
+          (cityQueryOverride == null &&
+              _cityController.text.isEmpty &&
+              _lastLat == null)) {
+        // --- END MODIFIED ---
         developer.log(
             '[HomeScreen] Determining current location coordinates...',
             name: 'HomeScreen');
@@ -193,21 +218,34 @@ class _HomeScreenState extends State<HomeScreen>
             name: 'HomeScreen');
       } else {
         String query = cityQueryOverride ?? _cityController.text;
-        developer.log('[HomeScreen] Geocoding city: $query...',
-            name: 'HomeScreen');
-        final coords = await _getCoordinatesFromCityName(
-            query); // Get coords from city name
-        if (coords != null) {
-          lat = coords['lat'];
-          lon = coords['lon'];
-          locationNameToDisplay = await _getCityNameFromCoordinates(
-                  lat!, lon!) ??
-              query; // Verify name via reverse geocode or use original query
+        // --- NEW: Handle case where query is still empty but we have a _lastLat
+        if (query.isEmpty && _lastLat != null && _lastLon != null) {
           developer.log(
-              '[HomeScreen] Using Searched Location: Lat=$lat, Lon=$lon, Name=$locationNameToDisplay',
+              '[HomeScreen] No query, using last known coordinates: Lat=$_lastLat, Lon=$_lastLon',
               name: 'HomeScreen');
-        } else {
-          throw Exception('Could not find coordinates for "$query".');
+          lat = _lastLat!;
+          lon = _lastLon!;
+          locationNameToDisplay =
+              await _getCityNameFromCoordinates(lat, lon) ?? cityName;
+        }
+        // --- END NEW ---
+        else {
+          developer.log('[HomeScreen] Geocoding city: $query...',
+              name: 'HomeScreen');
+          final coords = await _getCoordinatesFromCityName(
+              query); // Get coords from city name
+          if (coords != null) {
+            lat = coords['lat'];
+            lon = coords['lon'];
+            locationNameToDisplay = await _getCityNameFromCoordinates(
+                    lat!, lon!) ??
+                query; // Verify name via reverse geocode or use original query
+            developer.log(
+                '[HomeScreen] Using Searched Location: Lat=$lat, Lon=$lon, Name=$locationNameToDisplay',
+                name: 'HomeScreen');
+          } else {
+            throw Exception('Could not find coordinates for "$query".');
+          }
         }
       }
 
@@ -218,6 +256,10 @@ class _HomeScreenState extends State<HomeScreen>
       if (lat != null && lon != null) {
         developer.log('[HomeScreen] Fetching Open-Meteo for Lat=$lat, Lon=$lon',
             name: 'HomeScreen');
+        // --- NEW: Store last used coordinates ---
+        _lastLat = lat;
+        _lastLon = lon;
+        // --- END NEW ---
         weatherData = await _weatherService.fetchWeatherOpenMeteo(lat, lon);
       } else {
         throw Exception('Could not determine coordinates for weather lookup.');
@@ -375,7 +417,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     try {
       final response = await http.get(url, headers: {
-        'User-Agent': 'WeatherCompanionApp/1.7.1 (johnbalmedina30@gmail.com)'
+        'User-Agent': 'WeatherCompanionApp/2.0.0 (johnbalmedina30@gmail.com)'
       });
 
       if (response.statusCode == 200) {
@@ -500,8 +542,12 @@ class _HomeScreenState extends State<HomeScreen>
     final String newIcon = current['condition']?['icon'] ?? "";
     final int newHumidity = (current['humidity'] as num?)?.toInt() ?? 0;
     final double newWindSpeed = (current['wind_kph'] as num?)?.toDouble() ?? 0;
-    final double? newLat = (location['lat'] as num?)?.toDouble();
-    final double? newLon = (location['lon'] as num?)?.toDouble();
+
+    // --- MODIFIED: Use _lastLat and _lastLon ---
+    final double? newLat = _lastLat;
+    final double? newLon = _lastLon;
+    // --- END MODIFIED ---
+
     final double newFeelsLike =
         (current['feelslike_c'] as num?)?.toDouble() ?? 0;
     final double newUvIndex = (current['uv'] as num?)?.toDouble() ?? 0;
@@ -529,8 +575,9 @@ class _HomeScreenState extends State<HomeScreen>
       timezoneId = apiTimezoneId; // <-- Store timezone ID
       forecastDays = forecast;
       forecastHours = newForecastHours;
-      _lastLat = newLat;
-      _lastLon = newLon;
+      // _lastLat and _lastLon are already set in _fetchData
+      // _lastLat = newLat; // No need to set them again here
+      // _lastLon = newLon;
 
       if (_cityController.text != newCityName &&
           !newCityName.startsWith('Lat:')) {
@@ -671,7 +718,27 @@ class _HomeScreenState extends State<HomeScreen>
       backgroundColor: theme.scaffoldBackgroundColor, // THEME AWARE
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => _fetchData(useCurrentLocation: true),
+          onRefresh: () async {
+            // --- MODIFIED: Refresh logic ---
+            developer.log('[HomeScreen] Pull-to-refresh triggered.',
+                name: 'HomeScreen');
+            // Check if a city is entered in the search bar
+            if (_cityController.text.isNotEmpty) {
+              await _fetchData(cityQueryOverride: _cityController.text);
+            } else {
+              // No city in search bar, check for default
+              final String? defaultLocation =
+                  await _settingsService.getDefaultLocation();
+              if (defaultLocation != null && defaultLocation.isNotEmpty) {
+                // Refresh default location
+                await _fetchData(cityQueryOverride: defaultLocation);
+              } else {
+                // No default, refresh current location
+                await _fetchData(useCurrentLocation: true);
+              }
+            }
+            // --- END MODIFIED ---
+          },
           color: theme.colorScheme.primary, // THEME AWARE
           backgroundColor: theme.appBarTheme.backgroundColor, // THEME AWARE
           child: Stack(
@@ -737,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen>
             errorBuilder: (_, __, ___) => const SizedBox.shrink()),
         const SizedBox(width: 8),
         Text(
-          "WeatherCompanion • Beta v1.7.2",
+          "WeatherCompanion v2.0.0",
           style: theme.textTheme.titleMedium?.copyWith(
             // THEME AWARE
             fontWeight: FontWeight.bold,
@@ -797,12 +864,14 @@ class _HomeScreenState extends State<HomeScreen>
               color: theme.iconTheme.color, size: 24), // THEME AWARE
           onPressed: () {
             FocusScope.of(context).unfocus();
+            // --- MODIFIED: Refresh button logic ---
             _fetchData(
                 cityQueryOverride: _cityController.text.isNotEmpty
                     ? _cityController.text
                     : null,
                 useCurrentLocation:
                     _cityController.text.isEmpty && _lastLat == null);
+            // --- END MODIFIED ---
           },
           tooltip: "Refresh",
           visualDensity: VisualDensity.compact,
@@ -847,7 +916,9 @@ class _HomeScreenState extends State<HomeScreen>
                   cityQueryOverride: _cityController.text.isNotEmpty
                       ? _cityController.text
                       : null,
-                  useCurrentLocation: _cityController.text.isEmpty),
+                  // --- MODIFIED: Check _lastLat as well ---
+                  useCurrentLocation:
+                      _cityController.text.isEmpty && _lastLat == null),
               child: const Text('Try Again'),
             )
           ],
@@ -1115,7 +1186,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: FloatingActionButton(
           heroTag: "map_fab",
           backgroundColor:
-              theme.colorScheme.surface.withOpacity(0.8), // THEME AWARE
+              theme.colorScheme.surface.withOpacity(0.25), // THEME AWARE
           elevation: 4.0,
           mini: true,
           onPressed: () async {
@@ -1197,16 +1268,26 @@ class _HomeScreenState extends State<HomeScreen>
             developer.log(
                 '[HomeScreen] No specific city selected OR units changed. Refreshing current view...',
                 name: 'HomeScreen');
-            await _fetchData(
-                cityQueryOverride: _cityController.text.isNotEmpty
-                    ? _cityController.text
-                    : null,
-                useCurrentLocation:
-                    _cityController.text.isEmpty && _lastLat == null);
+            // --- MODIFIED: Refresh logic after settings close ---
+            // If a city is in the controller, refresh that.
+            // Otherwise, check for a default.
+            // Otherwise, use current location.
+            if (_cityController.text.isNotEmpty) {
+              await _fetchData(cityQueryOverride: _cityController.text);
+            } else {
+              final String? defaultLocation =
+                  await _settingsService.getDefaultLocation();
+              if (defaultLocation != null && defaultLocation.isNotEmpty) {
+                await _fetchData(cityQueryOverride: defaultLocation);
+              } else {
+                await _fetchData(useCurrentLocation: true);
+              }
+            }
+            // --- END MODIFIED ---
           }
         },
         backgroundColor:
-            theme.colorScheme.surface.withOpacity(0.8), // THEME AWARE
+            theme.colorScheme.surface.withOpacity(0.25), // THEME AWARE
         elevation: 6.0,
         tooltip: 'Settings',
         child: Icon(Icons.settings,

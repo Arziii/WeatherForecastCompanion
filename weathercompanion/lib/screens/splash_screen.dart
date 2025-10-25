@@ -47,19 +47,24 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              "WeatherCompanion",
+              "WeatherForecastCompanion",
               style: theme.textTheme.headlineMedium?.copyWith(
                 // THEME AWARE
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1,
+                fontFamily: 'Roboto',
+                fontSize: 24
+                
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              "Your pocket weather assistant.",
+              "Weather Forecast with AI integration",
               style: theme.textTheme.bodyLarge?.copyWith(
                 // THEME AWARE
                 color: theme.textTheme.bodyLarge?.color?.withOpacity(0.7),
+                fontFamily: 'Roboto',
+                fontStyle: FontStyle.italic,
               ),
             ),
             const SizedBox(height: 40),
