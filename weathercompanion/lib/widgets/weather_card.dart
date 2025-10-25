@@ -43,11 +43,39 @@ class WeatherCard extends StatelessWidget {
     final textTheme = theme.textTheme;
     final secondaryColor = textTheme.bodyMedium?.color?.withOpacity(0.7);
 
+    // --- ADDED FOR VIBE CHECK ---
+    final isLightMode = theme.brightness == Brightness.light;
+
+    //
+    // 👇👇👇 VIBE CHECK (Light Mode) 👇👇👇
+    //
+    const double lightModeOpacity = 0.6; // Try 0.5, 0.6, 0.8, etc.
+    //
+    // 👆👆👆 VIBE CHECK (Light Mode) 👆👆👆
+    //
+
+    //
+    // 👇👇👇 VIBE CHECK (Dark Mode) 👇👇👇
+    //
+    const double darkModeOpacity = 0.2; // 1.0 = solid.
+    //
+    // 👆👆👆 VIBE CHECK (Dark Mode) 👆👆👆
+    //
+    // --- END ADDED SECTION ---
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.cardColor, // THEME AWARE
+        //
+        // --- MODIFIED THIS LINE ---
+        //
+        color: isLightMode
+            ? theme.cardColor.withOpacity(lightModeOpacity)
+            : theme.cardColor.withOpacity(darkModeOpacity),
+        //
+        // --- END MODIFIED LINE ---
+        //
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(

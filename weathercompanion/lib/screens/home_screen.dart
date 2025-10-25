@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       _animationController = AnimationController(
         vsync: this,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(milliseconds: 2000),
       );
       _bounceAnimation = Tween<double>(begin: 0.0, end: 8.0).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
@@ -532,11 +532,14 @@ class _HomeScreenState extends State<HomeScreen>
      formattedLocalTime = DateFormat('h:mm a').format(parsedLocalTime);
    }
 
-   // Hourly Data Processing (Keep this part)
+   // --- MODIFICATION: Limit hours shown on home screen ---
    final List<dynamic> allHours =
        (todayForecast != null && todayForecast['hour'] != null)
            ? (todayForecast['hour'] as List)
            : [];
+   const int maxHoursToShow = 12; // Show up to 12 hours
+   // --- END MODIFICATION ---
+
    final DateTime refTimeForHourly = parsedLocalTime ?? DateTime.now();
    final List<dynamic> newForecastHours = allHours.where((hour) {
      try {
@@ -622,7 +625,9 @@ class _HomeScreenState extends State<HomeScreen>
      localTime = formattedLocalTime;
      timezoneId = apiTimezoneId;
      forecastDays = forecast;
-     forecastHours = newForecastHours;
+     // --- MODIFICATION: Apply the limit ---
+     forecastHours = newForecastHours.take(maxHoursToShow).toList();
+     // --- END MODIFICATION ---
 
      if (_cityController.text != newCityName &&
          !newCityName.startsWith('Lat:')) {
@@ -791,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // --- Get Background Gradient (Day/Night Logic) ---
+  // --- *** MODIFIED: Get Background Gradient (Brighter) *** ---
   LinearGradient _getBackgroundGradient(String description, bool isDay) {
     ThemeData theme = Theme.of(context);
     String desc = description.toLowerCase();
@@ -806,8 +811,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.blueGrey.withOpacity(0.8),
-            Colors.indigo.withOpacity(0.9)
+            Colors.blueGrey.withOpacity(0.4), // Was 0.8
+            Colors.indigo.withOpacity(0.5) // Was 0.9
           ],
         );
       } else if (desc.contains('sun') ||
@@ -817,8 +822,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.orange.shade300.withOpacity(0.7),
-            Colors.lightBlue.shade300.withOpacity(0.8)
+            Colors.orange.shade300.withOpacity(0.5), // Was 0.7
+            Colors.lightBlue.shade300.withOpacity(0.6) // Was 0.8
           ],
         );
       } else if (desc.contains('cloud') ||
@@ -829,8 +834,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.grey.shade400.withOpacity(0.8),
-            Colors.blueGrey.shade400.withOpacity(0.9)
+            Colors.grey.shade400.withOpacity(0.6), // Was 0.8
+            Colors.blueGrey.shade400.withOpacity(0.7) // Was 0.9
           ],
         );
       } else if (desc.contains('snow') || desc.contains('sleet')) {
@@ -838,8 +843,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.lightBlue.shade100.withOpacity(0.8),
-            Colors.grey.shade300.withOpacity(0.9)
+            Colors.lightBlue.shade100.withOpacity(0.6), // Was 0.8
+            Colors.grey.shade300.withOpacity(0.7) // Was 0.9
           ],
         );
       }
@@ -852,8 +857,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.indigo.shade900.withOpacity(0.8),
-            Colors.black.withOpacity(0.9)
+            Colors.indigo.shade900.withOpacity(0.7), // Was 0.8
+            Colors.black.withOpacity(0.8) // Was 0.9
           ],
         );
       } else if (desc.contains('clear') || desc.contains('windy')) {
@@ -861,8 +866,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withOpacity(0.8),
-            Colors.indigo.shade900.withOpacity(0.9)
+            Colors.black.withOpacity(0.7), // Was 0.8
+            Colors.indigo.shade900.withOpacity(0.8) // Was 0.9
           ],
         );
       } else if (desc.contains('cloud') ||
@@ -873,8 +878,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.blueGrey.shade900.withOpacity(0.8),
-            Colors.black.withOpacity(0.9)
+            Colors.blueGrey.shade900.withOpacity(0.7), // Was 0.8
+            Colors.black.withOpacity(0.8) // Was 0.9
           ],
         );
       } else if (desc.contains('snow') || desc.contains('sleet')) {
@@ -882,8 +887,8 @@ class _HomeScreenState extends State<HomeScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.grey.shade800.withOpacity(0.8),
-            Colors.black.withOpacity(0.9)
+            Colors.grey.shade800.withOpacity(0.7), // Was 0.8
+            Colors.black.withOpacity(0.8) // Was 0.9
           ],
         );
       }
@@ -894,11 +899,12 @@ class _HomeScreenState extends State<HomeScreen>
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        theme.scaffoldBackgroundColor.withOpacity(0.7),
-        theme.primaryColor.withOpacity(0.8)
+        theme.scaffoldBackgroundColor.withOpacity(0.6), // Was 0.7
+        theme.primaryColor.withOpacity(0.7) // Was 0.8
       ],
     );
   }
+  // --- *** END MODIFIED *** ---
 
   // --- WIDGET BUILD (THEME AWARE) ---
   @override
@@ -923,7 +929,8 @@ class _HomeScreenState extends State<HomeScreen>
             child: Lottie.asset(
               _currentAnimation,
               key: ValueKey<String>(_currentAnimation),
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
+              alignment: Alignment.center, // <-- *** ADDED THIS LINE ***
               width: double.infinity,
               height: double.infinity,
             ),
@@ -1194,9 +1201,27 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // --- Build AI Greeting (THEME AWARE) ---
+  // --- Build AI Greeting (THEME AWARE with Opacity) ---
   Widget _buildAiGreeting() {
     final theme = Theme.of(context);
+    final isLightMode = theme.brightness == Brightness.light;
+
+    //
+    // 👇👇👇 VIBE CHECK (Light Mode) 👇👇👇
+    //
+    const double lightModeOpacity = 0.6; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Light Mode) 👆👆👆
+    //
+
+    //
+    // 👇👇👇 VIBE CHECK (Dark Mode) 👇👇👇
+    //
+    const double darkModeOpacity = 0.2; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Dark Mode) 👆👆👆
+    //
+
     if (_greetingLoading) {
       return Center(
           child: Padding(
@@ -1209,7 +1234,11 @@ class _HomeScreenState extends State<HomeScreen>
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          // --- APPLY OPACITY HERE ---
+          color: isLightMode
+              ? theme.cardColor.withOpacity(lightModeOpacity)
+              : theme.cardColor.withOpacity(darkModeOpacity),
+          // --- END OPACITY CHANGE ---
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
               color: theme.colorScheme.onSurface.withOpacity(0.2)),
@@ -1234,9 +1263,27 @@ class _HomeScreenState extends State<HomeScreen>
     return const SizedBox.shrink();
   }
 
-  // --- Build Hourly Forecast (THEME AWARE) ---
+  // --- Build Hourly Forecast (THEME AWARE with Opacity) ---
   Widget _buildHourlyForecast(TemperatureUnit tempUnit) {
     final theme = Theme.of(context);
+    final isLightMode = theme.brightness == Brightness.light;
+
+    //
+    // 👇👇👇 VIBE CHECK (Light Mode) 👇👇👇
+    //
+    const double lightModeOpacity = 0.6; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Light Mode) 👆👆👆
+    //
+
+    //
+    // 👇👇👇 VIBE CHECK (Dark Mode) 👇👇👇
+    //
+    const double darkModeOpacity = 0.2; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Dark Mode) 👆👆👆
+    //
+
     return SizedBox(
       height: 110,
       child: ListView.builder(
@@ -1265,9 +1312,13 @@ class _HomeScreenState extends State<HomeScreen>
             margin: const EdgeInsets.only(right: 10),
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
+              // --- APPLY OPACITY HERE ---
               color: isNow
-                  ? theme.colorScheme.primary.withOpacity(0.3)
-                  : theme.cardColor,
+                  ? theme.colorScheme.primary.withOpacity(0.3) // "Now" card
+                  : isLightMode
+                      ? theme.cardColor.withOpacity(lightModeOpacity)
+                      : theme.cardColor.withOpacity(darkModeOpacity),
+              // --- END OPACITY CHANGE ---
               borderRadius: BorderRadius.circular(12),
               border: isNow
                   ? Border.all(color: theme.colorScheme.primary, width: 0.5)
@@ -1298,9 +1349,27 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // --- Build Daily Forecast (THEME AWARE) ---
+  // --- Build Daily Forecast (THEME AWARE with Opacity) ---
   Widget _buildDailyForecast(TemperatureUnit tempUnit, WindSpeedUnit windUnit) {
     final theme = Theme.of(context);
+    final isLightMode = theme.brightness == Brightness.light;
+
+    //
+    // 👇👇👇 VIBE CHECK (Light Mode) 👇👇👇
+    //
+    const double lightModeOpacity = 0.6; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Light Mode) 👆👆👆
+    //
+
+    //
+    // 👇👇👇 VIBE CHECK (Dark Mode) 👇👇👇
+    //
+    const double darkModeOpacity = 0.2; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Dark Mode) 👆👆👆
+    //
+
     final daysToShow =
         forecastDays.length > 1 ? forecastDays.sublist(1) : forecastDays;
 
@@ -1347,7 +1416,11 @@ class _HomeScreenState extends State<HomeScreen>
               margin: const EdgeInsets.only(right: 10),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: theme.cardColor,
+                // --- APPLY OPACITY HERE ---
+                color: isLightMode
+                    ? theme.cardColor.withOpacity(lightModeOpacity)
+                    : theme.cardColor.withOpacity(darkModeOpacity),
+                // --- END OPACITY CHANGE ---
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1382,6 +1455,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+
 
   // --- Build Map Button (THEME AWARE) ---
   Widget _buildMapButton() {

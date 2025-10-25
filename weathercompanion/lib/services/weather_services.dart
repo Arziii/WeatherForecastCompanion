@@ -223,7 +223,14 @@ class WeatherService {
             'sunset': formattedSunset,   // Use AM/PM formatted string
           },
           // Include hourly data for today in the first daily entry
-          'hour': (i == 0) ? transformedHourly : [],
+          // --- MODIFIED: Include HOURLY DATA FOR EACH DAY ---
+         // Filter transformedHourly to only include hours for the current daily date
+         'hour': transformedHourly.where((hour) {
+          // Compare just the date part of the hour's time string
+            // with the current daily date string
+           return hour['time'] != null && hour['time'].startsWith(dailyDates[i]);
+          }).toList(),
+          // --- END MODIFIED ---
         });
       }
     } else {

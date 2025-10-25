@@ -146,15 +146,37 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     final textTheme = theme.textTheme;
     // --- END MODIFIED ---
 
+    // --- ADDED FOR VIBE CHECK ---
+    final isLightMode = theme.brightness == Brightness.light;
+
+    //
+    // 👇👇👇 VIBE CHECK (Light Mode) 👇👇👇
+    //
+    const double lightModeOpacity = 0.6; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Light Mode) 👆👆👆
+    //
+
+    //
+    // 👇👇👇 VIBE CHECK (Dark Mode) 👇👇👇
+    //
+    const double darkModeOpacity = 0.2; // <- YOUR VALUE
+    //
+    // 👆👆👆 VIBE CHECK (Dark Mode) 👆👆👆
+    //
+    // --- END ADDED SECTION ---
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        // --- MODIFIED: Use theme colors ---
-        color: theme.cardColor,
+        // --- MODIFIED: Use theme colors with opacity ---
+        color: isLightMode
+            ? theme.cardColor.withOpacity(lightModeOpacity)
+            : theme.cardColor.withOpacity(darkModeOpacity),
+        // --- END MODIFIED ---
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.2)),
-        // --- END MODIFIED ---
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
