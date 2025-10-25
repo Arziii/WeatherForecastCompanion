@@ -9,38 +9,8 @@ import 'package:intl/intl.dart';
 // import 'package:weathercompanion/widgets/weather_card.dart';
 
 class WeatherService {
-  // WeatherAPI Key (keep for now, might switch back)
-  final String _apiKey = "2a0ed89b3c6945dbbbd134308252110";
-  final String _baseUrlWeatherAPI = "https://api.weatherapi.com/v1";
-
   // Open-Meteo base URL
   final String _baseUrlOpenMeteo = "https://api.open-meteo.com/v1";
-
-  // --- WeatherAPI Fetch (Original) ---
-  Future<Map<String, dynamic>?> fetchWeather(String city) async {
-    final url =
-        '$_baseUrlWeatherAPI/forecast.json?key=$_apiKey&q=$city&days=7&aqi=no&alerts=no';
-    developer.log("Fetching WeatherAPI data from: $url",
-        name: 'WeatherService');
-
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        developer.log("WeatherAPI data received successfully.",
-            name: 'WeatherService');
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      } else {
-        developer.log(
-            "Failed to load WeatherAPI data: ${response.statusCode}. Body: ${response.body}",
-            name: 'WeatherService');
-        return null;
-      }
-    } catch (e) {
-      developer.log("Error fetching WeatherAPI data: $e",
-          name: 'WeatherService', error: e);
-      return null;
-    }
-  }
 
   // --- NEW: Open-Meteo Fetch ---
   Future<Map<String, dynamic>?> fetchWeatherOpenMeteo(
