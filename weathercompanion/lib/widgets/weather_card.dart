@@ -3,18 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:weathercompanion/widgets/weather_icon_image.dart';
 
 class WeatherCard extends StatelessWidget {
-  // Use display-ready values
   final double displayTemperature;
-  final String tempUnitSymbol; // 'C' or 'F'
+  final String tempUnitSymbol;
   final String icon;
   final String description;
   final String date;
-  // ✅ ADDED THIS LINE
   final String localTime;
   final int humidity;
   final double displayWindSpeed;
-  final String windUnitSymbol; // 'kph' or 'mph'
-  final double feelsLikeTemp; // Already converted if needed
+  final String windUnitSymbol;
+  final double feelsLikeTemp;
   final double uvIndex;
   final int precipitationChance;
   final String sunriseTime;
@@ -27,7 +25,6 @@ class WeatherCard extends StatelessWidget {
     required this.icon,
     required this.description,
     required this.date,
-    // ✅ ADDED THIS REQUIRED PARAMETER
     required this.localTime,
     required this.humidity,
     required this.displayWindSpeed,
@@ -41,115 +38,128 @@ class WeatherCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Get the current theme
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final secondaryColor = textTheme.bodyMedium?.color?.withOpacity(0.7);
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
+        color: theme.cardColor, // THEME AWARE
         borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF7986CB), Color(0xFF3F51B5)],
-        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black26,
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 10,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Display Date and Time side-by-side
+          // Top Row: Temp, Icon, Date/Time
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(date,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
-              // ✅ USE THE localTime PARAMETER
-              Text("Local Time: $localTime",
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              WeatherIconImage(iconUrl: icon, size: 70),
-              const SizedBox(width: 15),
+              // Temp and Description
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "${displayTemperature.round()}°$tempUnitSymbol",
-                      style: const TextStyle(
-                          fontSize: 42,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      // Display feelsLike temp without symbol again, as units match display temp
-                      "Feels like ${feelsLikeTemp.round()}°",
-                      style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500),
+                      '${displayTemperature.round()}°$tempUnitSymbol',
+                      style: textTheme.displayLarge?.copyWith(
+                        // THEME AWARE
+                        fontWeight: FontWeight.bold,
+                        height: 1.0,
+                      ),
                     ),
                     const SizedBox(height: 5),
-                    Text(description,
-                        textAlign: TextAlign.right,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 16),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      description,
+                      style: textTheme.titleMedium, // THEME AWARE
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
+              ),
+              // Icon and Date/Time
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  WeatherIconImage(iconUrl: icon, size: 70.0),
+                  const SizedBox(height: 10),
+                  Text(
+                    date,
+                    style: textTheme.bodyMedium
+                        ?.copyWith(color: secondaryColor), // THEME AWARE
+                  ),
+                  Text(
+                    'Local Time: $localTime',
+                    style: textTheme.bodyMedium
+                        ?.copyWith(color: secondaryColor), // THEME AWARE
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Divider(
+              color:
+                  theme.colorScheme.onSurface.withOpacity(0.3)), // THEME AWARE
+          const SizedBox(height: 15),
+
+          // Bottom Row: Details Grid
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildDetailItem(
+                context,
+                Icons.thermostat,
+                'Feels Like',
+                '${feelsLikeTemp.round()}°$tempUnitSymbol',
+              ),
+              _buildDetailItem(
+                context,
+                Icons.water_drop_outlined,
+                'Humidity',
+                '$humidity%',
+              ),
+              _buildDetailItem(
+                context,
+                Icons.air,
+                'Wind',
+                '${displayWindSpeed.round()} $windUnitSymbol',
               ),
             ],
           ),
           const SizedBox(height: 15),
-          Divider(color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 10),
           Row(
-            // Row 1
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildDetailItem(
-                  icon: Icons.water_drop_outlined,
-                  value: "$humidity%",
-                  label: "Humidity"),
+                context,
+                Icons.wb_sunny_outlined,
+                'UV Index',
+                '$uvIndex',
+              ),
               _buildDetailItem(
-                  icon: Icons.air,
-                  value: "${displayWindSpeed.round()} $windUnitSymbol",
-                  label: "Wind"),
+                context,
+                Icons.umbrella_outlined,
+                'Rain Chance',
+                '$precipitationChance%',
+              ),
               _buildDetailItem(
-                  icon: Icons.umbrella_outlined,
-                  value: "$precipitationChance%",
-                  label: "Precip"),
-            ],
-          ),
-          const SizedBox(height: 15),
-          Row(
-            // Row 2
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildDetailItem(
-                  icon: Icons.wb_sunny_outlined,
-                  value: uvIndex.toStringAsFixed(0),
-                  label: "UV Index"),
-              _buildDetailItem(
-                  icon: Icons.wb_twilight_outlined,
-                  value: sunriseTime,
-                  label: "Sunrise"),
-              _buildDetailItem(
-                  icon: Icons.dark_mode_outlined,
-                  value: sunsetTime,
-                  label: "Sunset"),
+                context,
+                Icons.brightness_6_outlined,
+                'Sunrise',
+                sunriseTime,
+              ),
             ],
           ),
         ],
@@ -157,39 +167,35 @@ class WeatherCard extends StatelessWidget {
     );
   }
 
-  // Helper widget for the detail items
-  Widget _buildDetailItem({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return SizedBox(
-      width: 75, // Constrain width
+  Widget _buildDetailItem(
+      BuildContext context, IconData icon, String label, String value) {
+    // Get theme data inside the helper
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final secondaryColor = textTheme.bodySmall?.color?.withOpacity(0.7);
+
+    return Expanded(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: Colors.white70, size: 22),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: secondaryColor), // THEME AWARE
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: textTheme.bodySmall
+                    ?.copyWith(color: secondaryColor), // THEME AWARE
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis, // Prevent overflow
-            textAlign: TextAlign.center,
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis, // Prevent overflow
+            style: textTheme.bodyLarge
+                ?.copyWith(fontWeight: FontWeight.w600), // THEME AWARE
             textAlign: TextAlign.center,
           ),
         ],

@@ -30,8 +30,12 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
   final gemini = Gemini.instance;
   final List<Map<String, dynamic>> _chatHistory = [];
   bool _isAILoading = false;
-  // ✅ Using gemini-pro, compatible with v1beta used by flutter_gemini 2.0.5
-  final String _modelName = 'gemini-pro';
+  // ✅ Using gemini-pro, compatible with v1beta used by flutter_gemini 3.0.0
+  // Model name can be adjusted if needed, but 'gemini-pro' is a common default.
+  // If you were using 'gemini-flash-latest' before, you can keep that:
+  // final String _modelName = 'gemini-flash-latest';
+  final String _modelName = 'gemini-pro'; // Or 'gemini-flash-latest' if preferred
+
 
   @override
   void initState() {
@@ -62,28 +66,35 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
 
     // Basic current conditions
     String context =
-        "Current weather in ${widget.cityName}: ${widget.temperature}°C and ${widget.weatherDescription}.";
+        "Current weather in ${widget.cityName}: ${widget.temperature.round()}°C and ${widget.weatherDescription}."; // Used round() for cleaner temp
 
     // Add 7-day forecast summary if available
     if (widget.forecastDays.isNotEmpty) {
-      context += "\n\n7-Day Forecast Summary:\n";
-      for (var dayData in widget.forecastDays) {
+      context += "\n\nAvailable Forecast Summary:\n"; // Changed title slightly
+      // Limit to max 7 days for brevity
+      final daysToShow = widget.forecastDays.length > 7
+          ? widget.forecastDays.sublist(0, 7)
+          : widget.forecastDays;
+      for (var dayData in daysToShow) {
         final day = dayData['day'] ?? {};
         final date = dayData['date'] ?? 'Unknown Date';
         final condition = day['condition']?['text'] ?? 'No condition';
         final maxTemp = (day['maxtemp_c'] as num?)?.round() ?? 'N/A';
         final minTemp = (day['mintemp_c'] as num?)?.round() ?? 'N/A';
         context +=
-            "- $date: $condition, $maxTemp°C / $minTemp°C\n";
+            "- $date: $condition, High: $maxTemp°C / Low: $minTemp°C\n"; // Added High/Low labels
       }
+    } else {
+       context += "\n\nNo forecast data is currently available.";
     }
-    return "Use the following weather data as context for your answer:\n$context";
+    // Added instruction for AI
+    return "You are a helpful weather assistant named Mr. WFC. Answer the user's question concisely based *only* on the following weather context. Do not mention 'context' or 'data provided'. If the context doesn't contain the answer, say you don't have that specific information right now.\n\nContext:\n$context";
   }
 
   void _sendMessage() async {
-    if (_controller.text.isEmpty || _isAILoading) return;
+    if (_controller.text.trim().isEmpty || _isAILoading) return; // Added trim()
 
-    final userMessage = _controller.text;
+    final userMessage = _controller.text.trim();
     _controller.clear();
 
     setState(() {
@@ -93,17 +104,20 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
     _scrollToBottom();
 
     final contextPrompt = _generateContextPrompt();
-    final fullPrompt = "$contextPrompt\n\nUser Question: $userMessage"; // Combine prompt
+    final fullPrompt = "$contextPrompt\n\nUser Question: $userMessage";
+    developer.log("Sending AI Assistant prompt:\n$fullPrompt", name: "AiAssistantWidget");
 
     try {
-       // ✅ FIX: Switched from gemini.chat() to gemini.text()
+      // 🚀 *** FIX: Switched from gemini.chat() to gemini.text() ***
       final response = await gemini.text(
         fullPrompt,
-        modelName: _modelName,
+        // modelName: _modelName, // modelName is optional for .text(), defaults likely used
       );
 
-      // ✅ FIX: Access output differently for .text() (using .output is simpler here)
+      // 🚀 *** FIX: Access output differently for .text() ***
+      // Use .output or iterate through candidates if needed
       final aiResponse = response?.output ?? "Sorry, I couldn't understand that.";
+      developer.log("AI Assistant response: $aiResponse", name: "AiAssistantWidget");
 
 
       setState(() {
@@ -112,7 +126,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
       });
       _scrollToBottom();
     } catch (e) {
-      developer.log('AI Chat Error: $e', name: 'AiAssistantWidget');
+      developer.log('AI Assistant Error: $e', name: 'AiAssistantWidget', error: e);
       setState(() {
         _chatHistory.add({
           'isUser': false,
@@ -154,17 +168,19 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
               itemCount: _chatHistory.length,
               itemBuilder: (context, index) {
                 final chat = _chatHistory[index];
-                final bool isUser = chat['isUser'];
+                final bool isUser = chat['isUser'] ?? false; // Added null check
+                final message = chat['message'] ?? ''; // Added null check
                 return Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                   child: Row(
                     mainAxisAlignment:
                         isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start, // Align top
                     children: [
                       if (!isUser)
                         Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
+                          padding: const EdgeInsets.only(right: 8.0, top: 5.0), // Align icon better
                           child: Image.asset('assets/images/logo.png',
                               width: 24, height: 24),
                         ),
@@ -173,16 +189,18 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: isUser
-                                ? const Color(0xFF3F51B5)
+                                ? const Color(0xFF3F51B5).withOpacity(0.8) // Slightly transparent user bubble
                                 : Colors.white.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12), // Slightly more rounded
                           ),
                           child: Text(
-                            chat['message'],
-                            style: const TextStyle(color: Colors.white),
+                            message,
+                            style: const TextStyle(color: Colors.white, fontSize: 15), // Slightly larger text
                           ),
                         ),
                       ),
+                       if (isUser) // Add padding for user bubble alignment
+                         const SizedBox(width: 32),
                     ],
                   ),
                 );
@@ -197,7 +215,7 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                   controller: _controller,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: "Type your message...",
+                    hintText: "Ask about the weather...", // More specific hint
                     hintStyle: const TextStyle(color: Colors.white70),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.2),
@@ -205,21 +223,27 @@ class _AiAssistantWidgetState extends State<AiAssistantWidget> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none),
                     contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 15, vertical: 10), // Adjusted padding
                     isDense: true,
                   ),
                   onSubmitted: (_) => _sendMessage(),
+                  textInputAction: TextInputAction.send, // Use send action
                 ),
               ),
               const SizedBox(width: 8),
               _isAILoading
                   ? const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child:
-                          SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.0)),
+                      padding: EdgeInsets.all(12.0), // Match button size better
+                      child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5)), // Slightly thicker stroke
                     )
                   : IconButton(
                       icon: const Icon(Icons.send, color: Colors.white),
+                      iconSize: 24, // Explicit size
+                      tooltip: "Send message",
                       onPressed: _sendMessage,
                     ),
             ],
